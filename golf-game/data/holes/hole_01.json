@@ -1,0 +1,7 @@
+{
+	"name": "Warm-Up Wedge",
+	"par": 3,
+	"tee": [0, 0, 0],
+	"cup": [0, 0, -40],
+	"wind_mph": [1, 6]
+}
