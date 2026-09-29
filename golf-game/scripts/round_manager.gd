@@ -23,6 +23,11 @@ var current_index := 0
 var strokes := 0
 ## Finished holes: an Array of { name, par, strokes }.
 var results: Array[Dictionary] = []
+## Shot grades this round, for the summary now and XP later (Milestone 5).
+## tier_counts[ShotQuality.Tier.PERFECT] = number of Perfect shots, and so on.
+var tier_counts: Array[int] = [0, 0, 0, 0]
+var perfect_timing_shots := 0
+var perfect_power_shots := 0
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +55,13 @@ func build_round(hole_count: int) -> void:
 	current_index = 0
 	strokes = 0
 	results.clear()
+	_reset_shot_stats()
+
+
+func _reset_shot_stats() -> void:
+	tier_counts = [0, 0, 0, 0]
+	perfect_timing_shots = 0
+	perfect_power_shots = 0
 
 
 ## Reads every .json file in data/holes/. Adding a hole = adding a file. No code changes.
@@ -96,6 +108,15 @@ func add_stroke() -> void:
 	strokes += 1
 
 
+## Remember how good a shot was. `quality` comes from ShotQuality.rate().
+func record_shot(quality: Dictionary) -> void:
+	tier_counts[quality["tier"]] += 1
+	if quality["perfect_timing"]:
+		perfect_timing_shots += 1
+	if quality["perfect_power"]:
+		perfect_power_shots += 1
+
+
 ## The most strokes allowed on the current hole.
 func stroke_cap() -> int:
 	return current_hole()["par"] + STROKE_CAP_OVER_PAR
@@ -119,6 +140,7 @@ func abandon_round() -> void:
 	results.clear()
 	current_index = 0
 	strokes = 0
+	_reset_shot_stats()
 	get_tree().change_scene_to_file(MENU_SCENE)
 
 

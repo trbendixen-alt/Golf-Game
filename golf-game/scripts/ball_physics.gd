@@ -27,6 +27,7 @@ const MIN_BOUNCE_SPEED := 1.5     # Slower landings than this don't bounce; the 
 const DEFAULT_ROLL_DECEL := 3.0   # How quickly rolling slows the ball (m/s^2). Clubs override this.
 const WIND_PUSH := 0.08           # Wind acceleration in the air, per m/s of wind speed.
 const ROLL_WIND_FACTOR := 0.1     # Wind matters this much less once the ball is on the ground.
+const CURVE_TURN_RATE := 0.08     # Radians per second the flight path bends with full sidespin (hook/slice).
 const STOP_SPEED := 0.2           # Rolling slower than this counts as stopped.
 const GROUND_TOLERANCE := 0.001   # Position is stored as a 32-bit float, so "on the ground" needs a tiny margin.
 const CUP_RADIUS := 0.5           # How close to the cup centre counts as "over the hole".
@@ -42,6 +43,12 @@ var is_moving := false
 var roll_decel := DEFAULT_ROLL_DECEL
 ## The wind as a velocity (direction * speed, in m/s). Zero = calm.
 var wind_velocity := Vector3.ZERO
+## Hook/slice spin from the accuracy tap: -1 curves hard left, 1 curves hard right, 0 = straight.
+var sidespin := 0.0
+## Backspin (wedges): 0 = none, 1 = the first landing kills all forward speed.
+var backspin := 0.0
+
+var _has_landed := false
 
 var _shadow: MeshInstance3D
 
@@ -79,12 +86,14 @@ func place_at(spot: Vector3) -> void:
 	velocity = Vector3.ZERO
 	is_moving = false
 	visible = true
+	_has_landed = false
 
 
 ## Hit the ball! `launch_velocity` is direction * speed, in metres per second.
 func launch(launch_velocity: Vector3) -> void:
 	velocity = launch_velocity
 	is_moving = true
+	_has_landed = false
 
 
 func _process(_delta: float) -> void:
@@ -114,6 +123,12 @@ func step(delta: float) -> void:
 		# the air longer, so it gets pushed more than a low punch shot.
 		velocity += wind_velocity * WIND_PUSH * delta
 		velocity -= velocity * velocity.length() * AIR_DRAG * delta
+		# Sidespin bends the flight path left or right a little more every moment,
+		# so a slice starts nearly straight and then peels away.
+		if sidespin != 0.0:
+			var turned := Vector3(velocity.x, 0.0, velocity.z).rotated(
+					Vector3.UP, -sidespin * CURVE_TURN_RATE * delta)
+			velocity = Vector3(turned.x, velocity.y, turned.z)
 
 	# 2. Move the ball.
 	position += velocity * delta
@@ -121,6 +136,11 @@ func step(delta: float) -> void:
 	# 3. Hit the ground?
 	if position.y <= BALL_RADIUS + GROUND_TOLERANCE and velocity.y <= 0.0:
 		position.y = BALL_RADIUS
+		# Backspin bites on the first landing, taking off some forward speed.
+		if not _has_landed:
+			_has_landed = true
+			velocity.x *= 1.0 - backspin
+			velocity.z *= 1.0 - backspin
 		if velocity.y < -MIN_BOUNCE_SPEED:
 			# A real landing: bounce back up, losing some energy.
 			velocity.y = -velocity.y * BOUNCE_ENERGY

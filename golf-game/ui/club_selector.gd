@@ -38,7 +38,7 @@ func _ready() -> void:
 
 func set_club(club: Dictionary) -> void:
 	_name_label.text = String(club["name"]).to_upper()
-	_stats_label.text = "Max %d m" % roundi(club["max_distance"])
+	_stats_label.text = "Lv %d  -  Max %d m" % [club["level"], roundi(club["max_distance"])]
 
 
 ## The arrows are switched off while a swing is in progress or the ball is moving.

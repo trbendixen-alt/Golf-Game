@@ -29,6 +29,8 @@ func _ready() -> void:
 	column.add_child(UiHelpers.make_label("Par: %d" % RoundManager.total_par(), 56))
 	column.add_child(UiHelpers.make_label(
 			"Score: %s" % RoundManager.format_vs_par(RoundManager.round_vs_par()), 80))
+	column.add_child(UiHelpers.make_label(
+			"Perfect shots: %d" % RoundManager.tier_counts[ShotQuality.Tier.PERFECT], 48))
 	column.add_child(UiHelpers.make_button("MAIN MENU", _on_menu_pressed))
 
 

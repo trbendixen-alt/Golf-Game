@@ -5,16 +5,23 @@ extends Node3D
 ## RoundManager. This script builds the scene in code (ground, flag, camera, light,
 ## UI) so you can read everything in one place.
 ##
-## Flow: tap -> tap -> tap (swing meter) -> ball flies/bounces/rolls -> ball stops
-## (swing again) or drops in the cup. Holing out (or hitting the stroke cap) shows the
+## Flow: drag to aim -> tap -> tap -> tap (swing meter) -> ball flies/bounces/rolls ->
+## ball stops (swing again) or drops in the cup. Holing out (or hitting the stroke cap) shows the
 ## score term, then RoundManager loads the next hole or the round summary.
 
 # How long the score term stays on screen before the next hole loads (tap to skip).
 const RESULT_SECONDS := 3.0
 
 # --- Shot tuning (speed and launch angle now come from the selected club) ---
-const MAX_MISS_ANGLE_DEG := 15.0 # Sideways aim error when the accuracy tap is at the far edge.
+const START_MISS_ANGLE_DEG := 4.0 # A far-edge accuracy tap starts the ball this far off line
+                                  # (sidespin then curves it further; see BallPhysics).
 const MAX_DISTANCE_LOSS := 0.15  # Fraction of speed lost by a totally off-centre accuracy tap.
+
+# --- Aiming ---
+const AIM_DEGREES_PER_PIXEL := 0.08    # How far the aim turns per pixel of sideways drag.
+const DRAG_THRESHOLD := 20.0           # Pixels a press must move before it counts as a drag.
+const AIM_KEY_DEGREES_PER_SECOND := 40.0  # Left/right arrow keys aim too (for desktop testing).
+const QUALITY_SECONDS := 1.2           # How long "PERFECT!" etc. stays on screen.
 
 const MPH_TO_MS := 0.44704       # Wind speeds are shown in MPH but physics uses m/s.
 const TRAIL_LEAD := 15.0         # Wind streaks are kept this far ahead of the ball.
@@ -39,6 +46,7 @@ var camera: Camera3D
 var hud: HoleHud
 var pause_menu: PauseMenu
 var wind_trails: WindTrails
+var aim_preview: AimPreview
 
 # Clubs: the list, which one is selected, and the power we suggest for the next shot.
 var clubs: Array[Dictionary] = []
@@ -46,12 +54,20 @@ var club_index := 0
 var club: Dictionary = {}
 var suggested_power := 0.0
 var cup_out_of_range := false
+# Where the aim preview's 100% power shot stops (drawn on the mini map).
+var _preview_end := Vector3.ZERO
 
 # The flat direction (unit vector) the ball is aimed in: always toward the cup.
 var aim_direction := Vector3(0, 0, -1)
 var hole_complete := false
 var _advance_countdown := 0.0
 var _advancing := false
+
+# A press before the swing starts can be a tap (start swing) or a drag (aim). We
+# only know which once the finger moves or lifts, so remember where it went down.
+var _pressing := false
+var _dragging := false
+var _press_position := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -179,6 +195,9 @@ func _build_ball() -> void:
 	shot.shot_fired.connect(_on_shot_fired)
 	add_child(shot)
 
+	aim_preview = AimPreview.new()
+	add_child(aim_preview)
+
 
 func _build_wind_trails() -> void:
 	wind_trails = WindTrails.new()
@@ -209,22 +228,53 @@ func pause_menu_open() -> void:
 # Input: every tap (mouse click, touch, or Space/Enter) goes here
 # ---------------------------------------------------------------------------
 
+## Before the swing starts, a press is either a tap (start the swing, on release) or a
+## sideways drag (aim). Once the swing has started, every press is a meter tap and
+## fires the instant the finger goes down, so timing feels exact.
 func _unhandled_input(event: InputEvent) -> void:
-	var tapped := false
-	# On a phone, Godot turns touches into mouse clicks for us, so this covers both.
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		tapped = true
+	# On a phone, Godot turns touches into mouse events for us, so this covers both.
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			_on_press(event.position)
+		elif _pressing:
+			_pressing = false
+			if not _dragging and _can_aim():
+				shot.tap()  # A press that didn't move: start the swing.
+	elif event is InputEventMouseMotion and _pressing:
+		if not _dragging and event.position.distance_to(_press_position) > DRAG_THRESHOLD:
+			_dragging = true
+		if _dragging and _can_aim():
+			# Drag right = aim right. Turning around UP by a negative angle turns right.
+			_turn_aim(-event.relative.x * AIM_DEGREES_PER_PIXEL)
 	elif event.is_action_pressed("ui_accept") and not event.is_echo():
-		tapped = true  # Space / Enter, handy when testing on a computer.
-	if tapped:
-		_on_tap()
+		# Space / Enter, handy when testing on a computer.
+		if hole_complete:
+			_go_to_next_hole()
+		elif not ball.is_moving:
+			shot.tap()
 
 
-func _on_tap() -> void:
+func _on_press(at: Vector2) -> void:
 	if hole_complete:
 		_go_to_next_hole()    # After the hole ends, a tap skips the wait.
+	elif _can_aim():
+		_pressing = true      # Tap or drag? Decided on move / release.
+		_dragging = false
+		_press_position = at
 	elif not ball.is_moving:
-		shot.tap()            # Otherwise the tap advances the swing meter.
+		shot.tap()            # Mid-swing: set power / accuracy right now.
+
+
+## Aiming (and switching clubs) is only allowed before the swing starts.
+func _can_aim() -> bool:
+	return shot.state == ShotController.State.IDLE and not ball.is_moving and not hole_complete
+
+
+## Turn the aim by some degrees: positive turns left, negative turns right.
+func _turn_aim(degrees: float) -> void:
+	aim_direction = aim_direction.rotated(Vector3.UP, deg_to_rad(degrees)).normalized()
+	_update_wind_arrow()
+	_update_aim_preview()
 
 
 # ---------------------------------------------------------------------------
@@ -235,20 +285,26 @@ func _on_tap() -> void:
 func _on_shot_fired(power: float, accuracy: float) -> void:
 	RoundManager.add_stroke()
 	_update_hud()
+	# Grade the swing (Perfect / Good / Average / Poor) and tell the player.
+	var quality := ShotQuality.rate(power, accuracy, suggested_power, club["sweet_spot"],
+			not club["two_tap"])
+	RoundManager.record_shot(quality)
+	hud.flash_quality(ShotQuality.TIER_NAMES[quality["tier"]], QUALITY_SECONDS)
+
 	# Power decides speed (as a fraction of the club's max). A bad accuracy tap also
 	# costs a little distance.
 	var speed: float = club["max_speed"] * power * (1.0 - MAX_DISTANCE_LOSS * absf(accuracy))
 
-	# Accuracy turns the aim left/right. Positive = right (+X when facing -Z),
-	# and rotating around UP by a negative angle turns clockwise, i.e. to the right.
-	var yaw := deg_to_rad(-accuracy * MAX_MISS_ANGLE_DEG)
+	# An off-centre accuracy tap starts the ball slightly off line, then sidespin
+	# curves it further: positive = right (a slice), negative = left (a hook).
+	# Rotating around UP by a negative angle turns clockwise, i.e. to the right.
+	var yaw := deg_to_rad(-accuracy * START_MISS_ANGLE_DEG)
 	var flat_direction := aim_direction.rotated(Vector3.UP, yaw)
-
-	# Tilt the flat direction upward by the launch angle to get the 3D direction.
-	var pitch := deg_to_rad(club["launch_angle"])
-	var direction := flat_direction * cos(pitch) + Vector3.UP * sin(pitch)
-	ball.roll_decel = club["roll_decel"]  # Each club rolls differently.
-	ball.launch(direction * speed)
+	ball.sidespin = accuracy
+	ball.roll_decel = club["roll_decel"]  # Each club rolls and spins differently.
+	ball.backspin = club["backspin"]
+	ball.launch(ClubSystem.launch_velocity(club, flat_direction, speed))
+	aim_preview.visible = false
 	hud.set_message("")
 
 
@@ -301,6 +357,17 @@ func _aim_at_cup() -> void:
 	if to_cup.length() > 0.5:  # Don't flip around if we're standing right on the cup.
 		aim_direction = to_cup.normalized()
 	_update_wind_arrow()
+	_update_aim_preview()
+
+
+## Redraw the dotted arc: a 100% power shot with this club along the aim line.
+func _update_aim_preview() -> void:
+	if club.is_empty():
+		return  # No club picked yet (still setting up the hole).
+	var path := ClubSystem.simulate_path(ball.position, aim_direction, club["max_speed"], club)
+	aim_preview.show_path(path)
+	aim_preview.visible = true
+	_preview_end = path[path.size() - 1]
 
 
 ## The wind arrow is drawn relative to the shot: "up" = wind blowing the way you hit.
@@ -322,8 +389,11 @@ func _select_club_offset(offset: int) -> void:
 func _select_club(index: int) -> void:
 	club_index = wrapi(index, 0, clubs.size())
 	club = clubs[club_index]
+	shot.sweet_spot = club["sweet_spot"]
+	shot.two_tap = club["two_tap"]
 	hud.set_club(club)
 	_update_suggestion()
+	_update_aim_preview()
 
 
 ## Work out how hard to hit with the current club to reach the cup (no wind included).
@@ -358,14 +428,20 @@ func _process(delta: float) -> void:
 		if _advance_countdown <= 0.0:
 			_go_to_next_hole()
 
+	# Arrow keys aim too, for testing on a computer.
+	var turn := Input.get_axis("ui_left", "ui_right")
+	if turn != 0.0 and _can_aim():
+		_turn_aim(-turn * AIM_KEY_DEGREES_PER_SECOND * delta)
+
 	# Glide toward a spot behind and above the ball, looking down the aim line.
 	var target := ball.position - aim_direction * CAMERA_BACK + Vector3.UP * CAMERA_HEIGHT
 	camera.position = camera.position.lerp(target, 1.0 - exp(-4.0 * delta))
 	_point_camera()
 
 	# Feed the HUD. Club arrows only work between shots.
-	hud.update_map(ball.position, cup_position, aim_direction, suggested_power, cup_out_of_range)
-	hud.set_club_buttons_enabled(shot.state == ShotController.State.IDLE and not hole_complete)
+	hud.update_map(ball.position, cup_position, aim_direction, _preview_end,
+			suggested_power, cup_out_of_range)
+	hud.set_club_buttons_enabled(_can_aim())
 
 	# Keep the wind streaks in front of the ball.
 	wind_trails.follow_position = ball.position + aim_direction * TRAIL_LEAD

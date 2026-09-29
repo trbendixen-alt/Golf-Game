@@ -1,9 +1,9 @@
 {
-	"_notes": "Level 1 stats. max_distance = metres the ball travels in total (flight + roll) at 100% power on flat ground with no wind. launch_angle = degrees above the ground. roll_decel = how fast rolling slows the ball (m/s^2): bigger = stops sooner. To add a club, add an entry here.",
+	"_notes": "Level 1 stats. max_distance = metres the ball travels in total (flight + roll) at 100% power on flat ground with no wind. launch_angle = degrees above the ground. roll_decel = how fast rolling slows the ball (m/s^2): bigger = stops sooner. sweet_spot = half-width of the green zone on the accuracy bar (0..1): bigger = more forgiving. backspin = 0..1, forward speed lost on the first landing. two_tap = power only, no accuracy tap (putter). To add a club, add an entry here.",
 	"clubs": [
-		{ "name": "Driver", "level_1": { "max_distance": 130, "launch_angle": 28, "roll_decel": 2.0 } },
-		{ "name": "Irons",  "level_1": { "max_distance": 90,  "launch_angle": 38, "roll_decel": 3.0 } },
-		{ "name": "Wedge",  "level_1": { "max_distance": 50,  "launch_angle": 55, "roll_decel": 5.5 } },
-		{ "name": "Putter", "level_1": { "max_distance": 25,  "launch_angle": 3,  "roll_decel": 1.5 } }
+		{ "name": "Driver", "level_1": { "max_distance": 130, "launch_angle": 28, "roll_decel": 2.0, "sweet_spot": 0.08, "backspin": 0.0 } },
+		{ "name": "Irons",  "level_1": { "max_distance": 90,  "launch_angle": 38, "roll_decel": 3.0, "sweet_spot": 0.10, "backspin": 0.15 } },
+		{ "name": "Wedge",  "level_1": { "max_distance": 50,  "launch_angle": 55, "roll_decel": 5.5, "sweet_spot": 0.12, "backspin": 0.5 } },
+		{ "name": "Putter", "two_tap": true, "level_1": { "max_distance": 25,  "launch_angle": 3,  "roll_decel": 1.5, "sweet_spot": 0.12, "backspin": 0.0 } }
 	]
 }

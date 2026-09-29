@@ -1,7 +1,7 @@
 class_name MiniMap
 extends Control
 ## The mini map in the top corner: a top-down view of the ball, the cup and the aim
-## line, plus the distance to the pin and the suggested power for the current club.
+## line (out to where a 100% power shot would stop), plus the distance to the pin and the suggested power for the current club.
 ## The map is rotated so "up" on it is always the direction you're aiming.
 
 const TEXT_HEIGHT := 110.0  # Space at the bottom for the two lines of text.
@@ -10,6 +10,7 @@ const TEXT_HEIGHT := 110.0  # Space at the bottom for the two lines of text.
 var ball_position := Vector3.ZERO
 var cup_position := Vector3.ZERO
 var aim_direction := Vector3(0, 0, -1)
+var shot_end := Vector3.ZERO  # Where a 100% power shot along the aim line stops.
 var suggested_power := 0.0
 var out_of_range := false   # True if the cup is further than the club can reach.
 
@@ -19,11 +20,12 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
-func update_map(ball_pos: Vector3, cup_pos: Vector3, aim_dir: Vector3,
+func update_map(ball_pos: Vector3, cup_pos: Vector3, aim_dir: Vector3, end_pos: Vector3,
 		power: float, too_far: bool) -> void:
 	ball_position = ball_pos
 	cup_position = cup_pos
 	aim_direction = aim_dir
+	shot_end = end_pos
 	suggested_power = power
 	out_of_range = too_far
 	queue_redraw()
@@ -57,8 +59,13 @@ func _draw() -> void:
 	var ball_point := centre + ball_offset * zoom
 	var cup_point := centre + cup_offset * zoom
 
-	# Aim line (dashed), then the cup and the ball on top.
-	draw_dashed_line(ball_point, cup_point, Color(1, 1, 1, 0.9), 3.0, 10.0)
+	# Aim line: straight up the map (the map is rotated to the aim), out to where a
+	# full-power shot stops, cut off at the top edge of the map.
+	var end_point := centre + _to_map_units(shot_end - middle, right) * zoom
+	end_point.y = maxf(end_point.y, map_rect.position.y)
+	if end_point.y < ball_point.y:
+		draw_dashed_line(ball_point, end_point, Color(1, 1, 1, 0.9), 3.0, 10.0)
+	# Then the cup and the ball on top.
 	draw_circle(cup_point, 11.0, Color.WHITE)
 	draw_circle(cup_point, 8.0, Color(0.9, 0.1, 0.1))
 	draw_circle(ball_point, 9.0, Color.BLACK)
