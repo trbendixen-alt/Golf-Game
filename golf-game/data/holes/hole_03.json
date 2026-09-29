@@ -13,5 +13,12 @@
 		{ "type": "pothole", "circle": [-12, -70], "radius": 2.0 },
 		{ "type": "pothole", "circle": [-8, -76], "radius": 1.6 },
 		{ "type": "pothole", "circle": [-17, -78], "radius": 1.8 }
+	],
+	"obstacles": [
+		{ "type": "car", "at": [21.5, -23.9], "angle": -26.6 },
+		{ "type": "car", "at": [17.6, -31.6], "angle": -26.6 },
+		{ "type": "car", "at": [13.8, -39.3], "angle": -26.6 },
+		{ "type": "wall", "at": [-24.7, -62.6], "size": [0.4, 14, 1.5], "angle": -26.6 },
+		{ "type": "building", "at": [-29.8, -32.6], "size": [10, 14, 12], "angle": -26.6 }
 	]
 }

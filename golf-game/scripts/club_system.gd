@@ -79,9 +79,10 @@ static func suggest_power(club: Dictionary, distance: float, start := Vector3.ZE
 		direction := Vector3(0, 0, -1), surfaces: SurfaceMap = null) -> float:
 	if simulate_distance(club["max_speed"], club, start, direction, surfaces) < distance:
 		return 1.0
+	# 8 rounds of halving pins the power down to within 0.4%.
 	var low := 0.0
 	var high := 1.0
-	for i in 12:
+	for i in 8:
 		var middle := (low + high) / 2.0
 		if simulate_distance(club["max_speed"] * middle, club, start, direction, surfaces) < distance:
 			low = middle

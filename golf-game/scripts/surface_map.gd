@@ -15,6 +15,10 @@ extends RefCounted
 ## [across, along] before turning, where "along" runs down the -Z direction.
 ##
 ## What each surface DOES (roll, bounce, lie, penalty) lives in data/surfaces.json.
+##
+## The map also holds the hole's solid obstacles (see Obstacles), because the top of a
+## car or a building is somewhere the ball can land too: support_at() answers "what is
+## the ball resting on, and how high is it?" for both.
 
 const SURFACES_FILE := "res://data/surfaces.json"
 const CIRCLE_POINTS := 24  # Circles become polygons with this many corners.
@@ -30,10 +34,15 @@ var zones: Array[Dictionary] = []
 var bounds := PackedVector2Array()
 ## The surface anywhere no zone covers.
 var ground := "rough"
+## Cars, walls, hay bales... that the ball bounces off (and can land on).
+var obstacles: Obstacles
 
 
-## Build a hole's map from its data file entries ("surfaces", "bounds", "ground").
-func _init(hole_zones: Array = [], hole_bounds = null, hole_ground := "") -> void:
+## Build a hole's map from its data file entries ("surfaces", "bounds", "ground",
+## "obstacles").
+func _init(hole_zones: Array = [], hole_bounds = null, hole_ground := "",
+		hole_obstacles: Array = []) -> void:
+	obstacles = Obstacles.new(hole_obstacles)
 	ground = hole_ground if hole_ground != "" else default_type()
 	for zone in hole_zones:
 		if not surface_types().has(zone["type"]):
@@ -56,9 +65,19 @@ func type_at(x: float, z: float) -> String:
 	return ground
 
 
-## The surface's full description at a 3D position (height is ignored).
+## The ground surface's full description at a 3D position (height and obstacles are
+## ignored: this is what's painted on the ground).
 func surface_at(position: Vector3) -> Dictionary:
 	return get_type(type_at(position.x, position.z))
+
+
+## What a ball at `position` would rest on: the top of an obstacle it's above, or the
+## ground. Returns { height (of the surface, in metres), surface (a surface description) }.
+func support_at(position: Vector3) -> Dictionary:
+	var top := obstacles.support_at(position.x, position.z, position.y)
+	if top["type"] != "":
+		return {"height": top["height"], "surface": Obstacles.get_type(top["type"])}
+	return {"height": 0.0, "surface": surface_at(position)}
 
 
 # ---------------------------------------------------------------------------

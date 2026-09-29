@@ -16,8 +16,9 @@ const STROKE_CAP_OVER_PAR := 5
 
 ## The holes to play this round, in order. Each entry is a Dictionary:
 ## { name, par, tee (Vector3), cup (Vector3), wind_min, wind_max (mph),
-##   surfaces (Array of zones), bounds (a shape, or null), ground (String) }
-## See SurfaceMap for the zone format.
+##   surfaces (Array of zones), bounds (a shape, or null), ground (String),
+##   obstacles (Array) }
+## See SurfaceMap for the zone format and Obstacles for the obstacle format.
 var hole_order: Array[Dictionary] = []
 ## Which hole we're on (0 = first).
 var current_index := 0
@@ -88,6 +89,7 @@ func _load_all_holes() -> Array[Dictionary]:
 			"surfaces": data.get("surfaces", []),
 			"bounds": data.get("bounds", null),
 			"ground": data.get("ground", ""),
+			"obstacles": data.get("obstacles", []),
 		})
 	return holes
 

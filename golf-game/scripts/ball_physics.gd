@@ -6,7 +6,8 @@ extends Node3D
 ## every physics tick (60 times per second, fixed timestep). That keeps the result
 ## predictable and identical on every phone, which a golf game needs.
 ##
-## Units: 1 unit = 1 metre. Y is up. The ground is the flat plane at y = 0.
+## Units: 1 unit = 1 metre. Y is up. The ground is the flat plane at y = 0, but the
+## ball can also land on (and roll off) the tops of obstacles like cars and buildings.
 ## Godot's "forward" direction is -Z, so the hole is down the negative Z axis.
 ##
 ## NOTE: this node's parent must sit at the world origin, because we use
@@ -37,6 +38,9 @@ const GROUND_TOLERANCE := 0.001   # Position is stored as a 32-bit float, so "on
 const CUP_RADIUS := 0.5           # How close to the cup centre counts as "over the hole".
 const CUP_CAPTURE_SPEED := 5.0    # Faster than this and the ball skips over the cup.
 const DROP_STEP_BACK := 1.0       # A water drop goes this far back from the edge, onto dry land.
+const MAX_SUBSTEP_MOVE := 0.15    # A fast ball moves in hops no longer than this, so it can't
+                                  # skip straight through a thin fence between two frames.
+const MAX_SUBSTEPS := 8
 
 ## World position of the cup. The hole scene sets this.
 var cup_position := Vector3.ZERO
@@ -55,12 +59,17 @@ var backspin := 0.0
 ## The hole's ground (fairway, rough, water...). null = fairway everywhere, which is
 ## what the practice balls in ClubSystem use to measure a club's distance.
 var surfaces: SurfaceMap = null
-## false = water / OOB play like fairway. Used by practice balls that work out the
-## suggested power, so a pond in the way doesn't confuse the maths.
+## false = water / OOB play like fairway and obstacles aren't there. Used by practice
+## balls that work out the suggested power, so a pond or a parked car in the way
+## doesn't confuse the maths.
 var hazards_enabled := true
 
 var _has_landed := false
 var _last_safe_position := Vector3.ZERO
+# What the ball is over right now: { height, surface } (see SurfaceMap.support_at).
+var _support := {"height": 0.0}
+# True while an obstacle is close enough to matter this tick (see step()).
+var _near_obstacle := false
 
 var _shadow: MeshInstance3D
 
@@ -92,9 +101,13 @@ func _ready() -> void:
 	add_child(_shadow)
 
 
-## Put the ball on the ground at `spot` (e.g. the tee) and make it stand still.
+## Put the ball down at `spot` (e.g. the tee) and make it stand still. It sits on
+## the ground, or on top of an obstacle if there's one there.
 func place_at(spot: Vector3) -> void:
-	position = Vector3(spot.x, BALL_RADIUS, spot.z)
+	position = Vector3(spot.x, 1000.0, spot.z)  # Start high so any obstacle top counts.
+	_near_obstacle = true
+	_support = _support_here()
+	position.y = _support["height"] + BALL_RADIUS
 	velocity = Vector3.ZERO
 	is_moving = false
 	visible = true
@@ -112,7 +125,10 @@ func launch(launch_velocity: Vector3) -> void:
 func _process(_delta: float) -> void:
 	# Keep the shadow glued to the ground below the ball. It shrinks as the ball rises.
 	var shrink := clampf(1.0 - position.y / 15.0, 0.4, 1.0)
-	_shadow.global_position = Vector3(position.x, 0.03, position.z)
+	var floor_height := 0.0
+	if surfaces != null:
+		floor_height = surfaces.support_at(position)["height"]  # Shadow falls on roofs too.
+	_shadow.global_position = Vector3(position.x, floor_height + 0.03, position.z)
 	_shadow.scale = Vector3(shrink, 1.0, shrink)
 
 
@@ -120,16 +136,34 @@ func _physics_process(delta: float) -> void:
 	step(delta)
 
 
-## Advance the ball by one small time step. This is public (and not just inside
+## Advance the ball by one physics tick. This is public (and not just inside
 ## _physics_process) so ClubSystem can run a "practice ball" off-screen to work out
 ## how far a shot will go.
 func step(delta: float) -> void:
 	if not is_moving:
 		return
+	# Near an obstacle, a fast ball moves in several short hops (see MAX_SUBSTEP_MOVE)
+	# so it can't skip through it. Out in the open one hop is enough, which keeps the
+	# practice shots behind the aim arc cheap. Hops depend only on where the ball is
+	# and how fast it's going, so the result is still the same on every phone.
+	# If nothing is within one tick's travel, the obstacle checks are skipped entirely.
+	var move := velocity.length() * delta
+	_near_obstacle = _obstacles_active() \
+			and surfaces.obstacles.is_near(position, move + BALL_RADIUS * 2.0)
+	var hops := 1
+	if _near_obstacle:
+		hops = clampi(ceili(move / MAX_SUBSTEP_MOVE), 1, MAX_SUBSTEPS)
+	for i in hops:
+		_substep(delta / hops)
+		if not is_moving:
+			return
 
+
+func _substep(delta: float) -> void:
 	# 1. Airborne: gravity and air drag act on the ball.
 	# (Also counts as airborne while moving upward, e.g. right after being hit.)
-	var airborne := position.y > BALL_RADIUS + GROUND_TOLERANCE or velocity.y > 0.0
+	var floor_y: float = _support["height"] + BALL_RADIUS
+	var airborne := position.y > floor_y + GROUND_TOLERANCE or velocity.y > 0.0
 	if airborne:
 		velocity.y -= GRAVITY * delta
 		# Wind pushes the ball the whole time it is in the air. A high arc stays in
@@ -146,15 +180,18 @@ func step(delta: float) -> void:
 	# 2. Move the ball.
 	position += velocity * delta
 
-	# 3. What's underneath? Remember the last playable spot for water drops.
-	var surface := _surface_here()
+	# 3. What's underneath (the ground, or a car roof...)? Remember the last playable
+	# spot on the ground for water drops.
+	_support = _support_here()
+	var surface: Dictionary = _support["surface"]
+	floor_y = _support["height"] + BALL_RADIUS
 	var is_hazard: bool = surface["penalty"] != ""
-	if not is_hazard:
+	if not is_hazard and _support["height"] == 0.0:
 		_last_safe_position = Vector3(position.x, BALL_RADIUS, position.z)
 
-	# 4. Hit the ground?
-	if position.y <= BALL_RADIUS + GROUND_TOLERANCE and velocity.y <= 0.0:
-		position.y = BALL_RADIUS
+	# 4. Hit the ground (or an obstacle's top)?
+	if position.y <= floor_y + GROUND_TOLERANCE and velocity.y <= 0.0:
+		position.y = floor_y
 		if is_hazard:
 			_stop_in_hazard(surface["penalty"])
 			return
@@ -174,18 +211,46 @@ func step(delta: float) -> void:
 			velocity.y = 0.0
 			_roll(delta, surface)
 
-	# 5. Did we drop into the cup?
+	# 5. Bump into the sides of obstacles.
+	_bounce_off_obstacles()
+
+	# 6. Did we drop into the cup?
 	_check_cup()
 
 
-## The surface under the ball right now.
-func _surface_here() -> Dictionary:
+## What the ball is over right now: { height, surface } (see SurfaceMap.support_at).
+func _support_here() -> Dictionary:
 	if surfaces == null:
-		return SurfaceMap.get_type("fairway")
-	var surface := surfaces.surface_at(position)
-	if not hazards_enabled and surface["penalty"] != "":
-		return SurfaceMap.get_type("fairway")
-	return surface
+		return {"height": 0.0, "surface": SurfaceMap.get_type("fairway")}
+	if not hazards_enabled:
+		# Practice ball: no obstacles, and hazards play like fairway.
+		var surface := surfaces.surface_at(position)
+		if surface["penalty"] != "":
+			surface = SurfaceMap.get_type("fairway")
+		return {"height": 0.0, "surface": surface}
+	if not _near_obstacle:
+		return {"height": 0.0, "surface": surfaces.surface_at(position)}
+	return surfaces.support_at(position)
+
+
+func _obstacles_active() -> bool:
+	return surfaces != null and hazards_enabled and not surfaces.obstacles.is_empty()
+
+
+## Push the ball out of anything it's overlapping and bounce it off. `restitution`
+## is how much of the speed into the obstacle comes back out; `grip` is how much of
+## the speed along it survives the scrape.
+func _bounce_off_obstacles() -> void:
+	if not _near_obstacle:
+		return
+	for contact in surfaces.obstacles.contacts(position, BALL_RADIUS):
+		var normal: Vector3 = contact["normal"]
+		position += normal * contact["depth"]
+		var into := velocity.dot(normal)
+		if into < 0.0:
+			var type := Obstacles.get_type(contact["type"])
+			var along := velocity - normal * into
+			velocity = along * type["grip"] - normal * into * type["restitution"]
 
 
 ## The ball touched down in water or out of bounds: stop it and report where to drop.
@@ -196,7 +261,8 @@ func _stop_in_hazard(kind: String) -> void:
 	var flat := Vector3(velocity.x, 0.0, velocity.z)
 	if flat.length() > 0.01 and surfaces != null:
 		var stepped_back := drop - flat.normalized() * DROP_STEP_BACK
-		if surfaces.surface_at(stepped_back)["penalty"] == "":
+		if surfaces.surface_at(stepped_back)["penalty"] == "" \
+				and not surfaces.obstacles.covers(stepped_back.x, stepped_back.z):
 			drop = stepped_back
 	velocity = Vector3.ZERO
 	is_moving = false

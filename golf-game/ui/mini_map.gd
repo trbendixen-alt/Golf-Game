@@ -72,6 +72,8 @@ func _draw() -> void:
 			_draw_zone(surfaces.bounds, surfaces.ground, map_rect, to_map)
 		for zone in surfaces.zones:
 			_draw_zone(zone["points"], zone["type"], map_rect, to_map)
+		for part in surfaces.obstacles.parts:
+			_draw_shape(Obstacles.footprint(part), part["color"].darkened(0.2), map_rect, to_map)
 
 	# Aim line: straight up the map (the map is rotated to the aim), out to where a
 	# full-power shot stops, cut off at the top edge of the map.
@@ -99,12 +101,17 @@ func _draw() -> void:
 ## Fill one surface zone, cut off at the edges of the map.
 func _draw_zone(points: PackedVector2Array, type_name: String, map_rect: Rect2,
 		to_map: Callable) -> void:
+	_draw_shape(points, SurfaceMap.get_type(type_name)["color"], map_rect, to_map)
+
+
+## Fill any ground outline (world x/z points) in a colour, cut off at the map's edges.
+func _draw_shape(points: PackedVector2Array, color: Color, map_rect: Rect2,
+		to_map: Callable) -> void:
 	var on_map := PackedVector2Array()
 	for point in points:
 		on_map.append(to_map.call(point))
 	var frame := PackedVector2Array([map_rect.position, Vector2(map_rect.end.x, map_rect.position.y),
 			map_rect.end, Vector2(map_rect.position.x, map_rect.end.y)])
-	var color: Color = SurfaceMap.get_type(type_name)["color"]
 	for piece in Geometry2D.intersect_polygons(on_map, frame):
 		if piece.size() >= 3:
 			draw_colored_polygon(piece, color)
