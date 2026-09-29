@@ -15,7 +15,9 @@ const SUMMARY_SCENE := "res://scenes/round_summary.tscn"
 const STROKE_CAP_OVER_PAR := 5
 
 ## The holes to play this round, in order. Each entry is a Dictionary:
-## { name, par, tee (Vector3), cup (Vector3), wind_min, wind_max (mph) }
+## { name, par, tee (Vector3), cup (Vector3), wind_min, wind_max (mph),
+##   surfaces (Array of zones), bounds (a shape, or null), ground (String) }
+## See SurfaceMap for the zone format.
 var hole_order: Array[Dictionary] = []
 ## Which hole we're on (0 = first).
 var current_index := 0
@@ -83,6 +85,9 @@ func _load_all_holes() -> Array[Dictionary]:
 			# Each hole picks a random wind speed between these two numbers.
 			"wind_min": float(data.get("wind_mph", [0, 0])[0]),
 			"wind_max": float(data.get("wind_mph", [0, 0])[1]),
+			"surfaces": data.get("surfaces", []),
+			"bounds": data.get("bounds", null),
+			"ground": data.get("ground", ""),
 		})
 	return holes
 
@@ -126,10 +131,11 @@ func is_at_stroke_cap() -> bool:
 	return strokes >= stroke_cap()
 
 
-## Save the finished hole's score. The player's strokes are recorded as-is; when they
-## pick up, they've hit the cap so the score is par + 5.
+## Save the finished hole's score. A hole never scores worse than the cap (par + 5),
+## even if a penalty stroke pushed the count past it.
 func record_hole() -> void:
 	var hole := current_hole()
+	strokes = mini(strokes, stroke_cap())
 	results.append({"name": hole["name"], "par": hole["par"], "strokes": strokes})
 
 

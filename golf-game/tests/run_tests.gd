@@ -193,3 +193,129 @@ func test_backspin_stops_the_ball_sooner() -> void:
 	wedge["backspin"] = 0.0
 	var without_spin := _hit(wedge, 0.8, 0.0)
 	check(with_spin.length() < without_spin.length(), "backspin shortens the roll")
+
+
+# ---------------------------------------------------------------------------
+# Surfaces and hazards (Milestone 4)
+# ---------------------------------------------------------------------------
+
+## A test course: fairway strip down -Z, a green on top of it, a pond off to the
+## right, and a 60 x 200 boundary.
+func _test_surfaces() -> SurfaceMap:
+	return SurfaceMap.new([
+		{"type": "fairway", "rect": [0, -50], "size": [10, 100]},
+		{"type": "green", "circle": [0, -100], "radius": 6},
+		{"type": "water", "rect": [20, -50], "size": [10, 100]},
+	], {"rect": [0, -50], "size": [60, 200]})
+
+
+func test_surface_lookup() -> void:
+	var map := _test_surfaces()
+	check(map.type_at(0, -50) == "fairway", "middle of the fairway")
+	check(map.type_at(0, -98) == "green", "green is drawn on top of the fairway")
+	check(map.type_at(-10, -50) == "rough", "anywhere uncovered is rough")
+	check(map.type_at(20, -50) == "water", "in the pond")
+	check(map.type_at(40, -50) == "oob", "outside the boundary")
+	var no_bounds := SurfaceMap.new([], null, "fairway")
+	check(no_bounds.type_at(500, 500) == "fairway", "no bounds: the hole's own ground everywhere")
+
+
+func test_rect_angle_turns_clockwise() -> void:
+	# A long thin rect turned 90 degrees clockwise (seen from above, -Z up) lies along X.
+	var map := SurfaceMap.new([{"type": "mud", "rect": [0, 0], "size": [2, 20], "angle": 90}])
+	check(map.type_at(8, 0) == "mud", "turned rect reaches along X")
+	check(map.type_at(0, -8) != "mud", "and no longer along Z")
+
+
+## Hit a ball from `start` straight down -Z over `map`. Returns [end position, hazard kind, drop].
+func _hit_on(map: SurfaceMap, start: Vector3, direction: Vector3, club: Dictionary,
+		power: float) -> Array:
+	var ball := BallPhysics.new()
+	ball.cup_position = Vector3(1000000, 0, 1000000)
+	ball.roll_decel = club["roll_decel"]
+	ball.surfaces = map
+	ball.place_at(start)
+	var hazard := ["", Vector3.ZERO]
+	ball.hazard.connect(func(kind: String, drop: Vector3) -> void: hazard[0] = kind; hazard[1] = drop)
+	ball.launch(ClubSystem.launch_velocity(club, direction, club["max_speed"] * power))
+	var steps := 0
+	while ball.is_moving and steps < 60 * 30:
+		ball.step(1.0 / 60.0)
+		steps += 1
+	var end := ball.position
+	ball.free()
+	return [end, hazard[0], hazard[1]]
+
+
+func test_rough_stops_the_ball_sooner() -> void:
+	var putter: Dictionary = ClubSystem.get_clubs()[3]
+	var on_fairway: Vector3 = _hit_on(SurfaceMap.new([], null, "fairway"), Vector3.ZERO,
+			Vector3(0, 0, -1), putter, 0.6)[0]
+	var in_rough: Vector3 = _hit_on(SurfaceMap.new([], null, "rough"), Vector3.ZERO,
+			Vector3(0, 0, -1), putter, 0.6)[0]
+	check(in_rough.length() < on_fairway.length() * 0.7,
+			"rough roll %.1f m vs fairway %.1f m" % [in_rough.length(), on_fairway.length()])
+
+
+func test_water_drops_near_where_it_went_in() -> void:
+	var map := _test_surfaces()
+	var putter: Dictionary = ClubSystem.get_clubs()[3]
+	# Putt from the fairway straight right into the pond (its edge is at x = 15).
+	var result := _hit_on(map, Vector3(8, 0, -50), Vector3.RIGHT, putter, 1.0)
+	check(result[1] == "water", "ball went in the water")
+	var drop: Vector3 = result[2]
+	check(map.type_at(drop.x, drop.z) != "water", "drop is on dry land")
+	check(drop.x > 12.0 and drop.x < 15.0, "drop is just short of the edge (x = %.2f)" % drop.x)
+
+
+func test_out_of_bounds_is_reported() -> void:
+	var driver: Dictionary = ClubSystem.get_clubs()[0]
+	var result := _hit_on(_test_surfaces(), Vector3(0, 0, -50), Vector3.LEFT, driver, 1.0)
+	check(result[1] == "oob", "ball flew out of bounds")
+
+
+func test_hazards_can_be_ignored_for_practice_shots() -> void:
+	var map := _test_surfaces()
+	var putter: Dictionary = ClubSystem.get_clubs()[3]
+	var path := ClubSystem.simulate_path(Vector3(8, 0, -50), Vector3.RIGHT,
+			putter["max_speed"], putter, map, false)
+	check(path[path.size() - 1].x > 15.0, "practice ball rolls on through the pond")
+
+
+func test_bad_lies_cost_power_unless_using_a_wedge() -> void:
+	var clubs := ClubSystem.get_clubs()
+	var pothole := SurfaceMap.get_type("pothole")
+	var driver := ClubSystem.adjust_for_lie(clubs[0], pothole)
+	check(driver["max_speed"] < clubs[0]["max_speed"], "driver loses power in a pothole")
+	check(driver["sweet_spot"] < clubs[0]["sweet_spot"], "driver's sweet spot shrinks")
+	check(driver["max_distance"] < clubs[0]["max_distance"], "driver's max distance drops")
+	var wedge := ClubSystem.adjust_for_lie(clubs[2], pothole)
+	check(wedge["max_speed"] == clubs[2]["max_speed"], "wedge plays out of a pothole cleanly")
+	var fairway := ClubSystem.adjust_for_lie(clubs[0], SurfaceMap.get_type("fairway"))
+	check(fairway == clubs[0], "fairway lie changes nothing")
+
+
+func test_suggest_power_says_full_when_out_of_reach() -> void:
+	var wedge: Dictionary = ClubSystem.get_clubs()[2]
+	check(ClubSystem.suggest_power(wedge, 500.0) == 1.0, "500 m is out of wedge range")
+
+
+func test_penalty_cant_push_score_past_the_cap() -> void:
+	var rounds := RoundManagerScript.new()
+	rounds.build_round(1)
+	for i in rounds.stroke_cap() + 1:  # Last shot in the water: one over the cap.
+		rounds.add_stroke()
+	rounds.record_hole()
+	check(rounds.results[0]["strokes"] == rounds.stroke_cap(), "score capped at par + 5")
+	rounds.free()
+
+
+func test_hole_files_are_playable() -> void:
+	var rounds := RoundManagerScript.new()
+	for hole in rounds._load_all_holes():
+		var map := SurfaceMap.new(hole["surfaces"], hole["bounds"], hole["ground"])
+		var tee: Vector3 = hole["tee"]
+		var cup: Vector3 = hole["cup"]
+		check(map.surface_at(tee)["penalty"] == "", "%s: tee is playable" % hole["name"])
+		check(map.type_at(cup.x, cup.z) == "green", "%s: cup is on the green" % hole["name"])
+	rounds.free()

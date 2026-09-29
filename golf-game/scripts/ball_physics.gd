@@ -16,6 +16,10 @@ extends Node3D
 signal came_to_rest
 ## Emitted when the ball drops into the cup.
 signal holed
+## Emitted when the ball touches down in water or out of bounds. `kind` is the
+## surface's penalty ("water" or "oob"). `drop_position` is the last playable spot the
+## ball passed over, i.e. roughly where it went in: that's where a water drop goes.
+signal hazard(kind: String, drop_position: Vector3)
 
 # --- Tunable numbers (tweak these to change how the ball feels) ---
 const BALL_RADIUS := 0.2          # Bigger than a real ball so it's visible on a phone.
@@ -32,6 +36,7 @@ const STOP_SPEED := 0.2           # Rolling slower than this counts as stopped.
 const GROUND_TOLERANCE := 0.001   # Position is stored as a 32-bit float, so "on the ground" needs a tiny margin.
 const CUP_RADIUS := 0.5           # How close to the cup centre counts as "over the hole".
 const CUP_CAPTURE_SPEED := 5.0    # Faster than this and the ball skips over the cup.
+const DROP_STEP_BACK := 1.0       # A water drop goes this far back from the edge, onto dry land.
 
 ## World position of the cup. The hole scene sets this.
 var cup_position := Vector3.ZERO
@@ -47,8 +52,15 @@ var wind_velocity := Vector3.ZERO
 var sidespin := 0.0
 ## Backspin (wedges): 0 = none, 1 = the first landing kills all forward speed.
 var backspin := 0.0
+## The hole's ground (fairway, rough, water...). null = fairway everywhere, which is
+## what the practice balls in ClubSystem use to measure a club's distance.
+var surfaces: SurfaceMap = null
+## false = water / OOB play like fairway. Used by practice balls that work out the
+## suggested power, so a pond in the way doesn't confuse the maths.
+var hazards_enabled := true
 
 var _has_landed := false
+var _last_safe_position := Vector3.ZERO
 
 var _shadow: MeshInstance3D
 
@@ -87,6 +99,7 @@ func place_at(spot: Vector3) -> void:
 	is_moving = false
 	visible = true
 	_has_landed = false
+	_last_safe_position = position
 
 
 ## Hit the ball! `launch_velocity` is direction * speed, in metres per second.
@@ -133,33 +146,68 @@ func step(delta: float) -> void:
 	# 2. Move the ball.
 	position += velocity * delta
 
-	# 3. Hit the ground?
+	# 3. What's underneath? Remember the last playable spot for water drops.
+	var surface := _surface_here()
+	var is_hazard: bool = surface["penalty"] != ""
+	if not is_hazard:
+		_last_safe_position = Vector3(position.x, BALL_RADIUS, position.z)
+
+	# 4. Hit the ground?
 	if position.y <= BALL_RADIUS + GROUND_TOLERANCE and velocity.y <= 0.0:
 		position.y = BALL_RADIUS
+		if is_hazard:
+			_stop_in_hazard(surface["penalty"])
+			return
 		# Backspin bites on the first landing, taking off some forward speed.
 		if not _has_landed:
 			_has_landed = true
 			velocity.x *= 1.0 - backspin
 			velocity.z *= 1.0 - backspin
 		if velocity.y < -MIN_BOUNCE_SPEED:
-			# A real landing: bounce back up, losing some energy.
-			velocity.y = -velocity.y * BOUNCE_ENERGY
-			velocity.x *= BOUNCE_GRIP
-			velocity.z *= BOUNCE_GRIP
+			# A real landing: bounce back up, losing some energy. Soft ground
+			# (rough, mud, potholes) soaks up more of it.
+			velocity.y = -velocity.y * BOUNCE_ENERGY * surface["bounce"]
+			velocity.x *= BOUNCE_GRIP * surface["bounce"]
+			velocity.z *= BOUNCE_GRIP * surface["bounce"]
 		else:
 			# A soft landing: stop bouncing and start rolling.
 			velocity.y = 0.0
-			_roll(delta)
+			_roll(delta, surface)
 
-	# 4. Did we drop into the cup?
+	# 5. Did we drop into the cup?
 	_check_cup()
 
 
-## Rolling: friction gradually slows the ball along the ground.
-func _roll(delta: float) -> void:
+## The surface under the ball right now.
+func _surface_here() -> Dictionary:
+	if surfaces == null:
+		return SurfaceMap.get_type("fairway")
+	var surface := surfaces.surface_at(position)
+	if not hazards_enabled and surface["penalty"] != "":
+		return SurfaceMap.get_type("fairway")
+	return surface
+
+
+## The ball touched down in water or out of bounds: stop it and report where to drop.
+func _stop_in_hazard(kind: String) -> void:
+	# Step back a little from the edge (the way the ball came) so the drop is
+	# clearly on dry land, unless that spot is itself a hazard.
+	var drop := _last_safe_position
+	var flat := Vector3(velocity.x, 0.0, velocity.z)
+	if flat.length() > 0.01 and surfaces != null:
+		var stepped_back := drop - flat.normalized() * DROP_STEP_BACK
+		if surfaces.surface_at(stepped_back)["penalty"] == "":
+			drop = stepped_back
+	velocity = Vector3.ZERO
+	is_moving = false
+	hazard.emit(kind, drop)
+
+
+## Rolling: friction gradually slows the ball along the ground (more on rough, mud...).
+func _roll(delta: float, surface: Dictionary) -> void:
 	var flat := Vector3(velocity.x, 0.0, velocity.z)
 	flat += wind_velocity * WIND_PUSH * ROLL_WIND_FACTOR * delta  # Only a small effect on roll.
-	var speed := maxf(flat.length() - roll_decel * delta, 0.0)
+	var speed := maxf(flat.length() - roll_decel * surface["roll"] * delta, 0.0)
 	velocity = flat.normalized() * speed
 	if speed < STOP_SPEED:
 		velocity = Vector3.ZERO

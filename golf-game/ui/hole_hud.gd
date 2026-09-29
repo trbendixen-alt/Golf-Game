@@ -23,6 +23,7 @@ var shot: ShotController
 
 var _info_label: Label
 var _stroke_label: Label
+var _lie_label: Label
 var _message_label: Label
 var _quality_label: Label
 var _quality_tween: Tween
@@ -72,6 +73,8 @@ func _ready() -> void:
 	top_left.add_child(_info_label)
 	_stroke_label = _make_label(44)
 	top_left.add_child(_stroke_label)
+	_lie_label = _make_label(40)
+	top_left.add_child(_lie_label)
 	_wind_meter = WindMeter.new()
 	top_left.add_child(_wind_meter)
 
@@ -129,6 +132,21 @@ func flash_quality(tier_name: String, seconds: float) -> void:
 	_quality_tween = create_tween()
 	_quality_tween.tween_interval(seconds * 0.6)
 	_quality_tween.tween_property(_quality_label, "modulate:a", 0.0, seconds * 0.4)
+
+
+## What the ball is sitting on, e.g. "Lie: Rough  -15% PWR". Red when it hurts the shot.
+func set_lie(surface_label: String, power_lost_percent: int) -> void:
+	_lie_label.text = "Lie: " + surface_label
+	if power_lost_percent > 0:
+		_lie_label.text += "  -%d%% PWR" % power_lost_percent
+		_lie_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45))
+	else:
+		_lie_label.remove_theme_color_override("font_color")
+
+
+## Give the mini map the hole's surfaces to draw. Call once per hole.
+func set_map_surfaces(surfaces: SurfaceMap) -> void:
+	_mini_map.surfaces = surfaces
 
 
 func set_club(club: Dictionary) -> void:

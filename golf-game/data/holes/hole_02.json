@@ -3,5 +3,13 @@
 	"par": 4,
 	"tee": [-15, 0, 10],
 	"cup": [20, 0, -60],
-	"wind_mph": [3, 12]
+	"wind_mph": [3, 12],
+	"bounds": { "rect": [2, -25], "size": [70, 100] },
+	"surfaces": [
+		{ "type": "fairway", "rect": [-15, -15], "size": [16, 55] },
+		{ "type": "fairway", "rect": [2.5, -50], "size": [14, 44], "angle": 60.3 },
+		{ "type": "tee", "rect": [-15, 10], "size": [6, 6] },
+		{ "type": "water", "polygon": [[-5, -5], [10, -8], [14, -30], [0, -38], [-6, -25]] },
+		{ "type": "green", "circle": [20, -60], "radius": 9 }
+	]
 }
