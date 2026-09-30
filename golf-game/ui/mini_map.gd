@@ -1,7 +1,7 @@
 class_name MiniMap
 extends Control
-## The mini map in the top corner: a top-down view of the ball, the cup and the aim
-## line (out to where a 100% power shot would stop), plus the distance to the pin and the suggested power for the current club.
+## The mini map in the top corner: a top-down view of the hole's surfaces (fairway,
+## green, hazards, out of bounds), the ball, the cup and the aim line (out to where a 100% power shot would stop), plus the distance to the pin and the suggested power for the current club.
 ## The map is rotated so "up" on it is always the direction you're aiming.
 
 const TEXT_HEIGHT := 110.0  # Space at the bottom for the two lines of text.
@@ -13,6 +13,8 @@ var aim_direction := Vector3(0, 0, -1)
 var shot_end := Vector3.ZERO  # Where a 100% power shot along the aim line stops.
 var suggested_power := 0.0
 var out_of_range := false   # True if the cup is further than the club can reach.
+## The hole's ground. Set once per hole by the HUD.
+var surfaces: SurfaceMap
 
 
 func _ready() -> void:
@@ -42,7 +44,6 @@ func _draw() -> void:
 
 	# The map area (green) sits above the text area.
 	var map_rect := Rect2(12, 12, size.x - 24, size.y - TEXT_HEIGHT - 24)
-	draw_rect(map_rect, Color(0.25, 0.5, 0.2))
 
 	# Turn world positions into map positions. "right" is the screen-right direction
 	# when facing the aim direction; the map is centred between the ball and the cup.
@@ -58,6 +59,19 @@ func _draw() -> void:
 	var centre := map_rect.get_center()
 	var ball_point := centre + ball_offset * zoom
 	var cup_point := centre + cup_offset * zoom
+
+	# The ground, drawn in the same order as the 3D hole so zones overlap the same way.
+	var to_map := func(world: Vector2) -> Vector2:
+		return centre + _to_map_units(Vector3(world.x, 0.0, world.y) - middle, right) * zoom
+	if surfaces == null:
+		draw_rect(map_rect, Color(0.25, 0.5, 0.2))
+	else:
+		var has_bounds := not surfaces.bounds.is_empty()
+		draw_rect(map_rect, SurfaceMap.get_type("oob" if has_bounds else surfaces.ground)["color"])
+		if has_bounds:
+			_draw_zone(surfaces.bounds, surfaces.ground, map_rect, to_map)
+		for zone in surfaces.zones:
+			_draw_zone(zone["points"], zone["type"], map_rect, to_map)
 
 	# Aim line: straight up the map (the map is rotated to the aim), out to where a
 	# full-power shot stops, cut off at the top edge of the map.
@@ -80,6 +94,20 @@ func _draw() -> void:
 		power_text += "+"  # Even 100% won't reach.
 	draw_string(font, Vector2(0, size.y - 20), power_text,
 			HORIZONTAL_ALIGNMENT_CENTER, size.x, 40, Color(1.0, 0.9, 0.2))
+
+
+## Fill one surface zone, cut off at the edges of the map.
+func _draw_zone(points: PackedVector2Array, type_name: String, map_rect: Rect2,
+		to_map: Callable) -> void:
+	var on_map := PackedVector2Array()
+	for point in points:
+		on_map.append(to_map.call(point))
+	var frame := PackedVector2Array([map_rect.position, Vector2(map_rect.end.x, map_rect.position.y),
+			map_rect.end, Vector2(map_rect.position.x, map_rect.end.y)])
+	var color: Color = SurfaceMap.get_type(type_name)["color"]
+	for piece in Geometry2D.intersect_polygons(on_map, frame):
+		if piece.size() >= 3:
+			draw_colored_polygon(piece, color)
 
 
 ## World offset (from the map centre) -> map units: x to the right, y DOWN the screen.

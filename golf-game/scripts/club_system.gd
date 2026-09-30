@@ -11,7 +11,8 @@ const SIM_STEP := 1.0 / 60.0
 const SIM_MAX_STEPS := 60 * 30  # Give up on a practice shot after 30 seconds.
 
 # Filled the first time it's needed, then reused. Each club is a Dictionary:
-# { name, level, two_tap, max_distance, launch_angle, roll_decel, sweet_spot, backspin, max_speed }
+# { name, level, two_tap, max_distance, launch_angle, roll_decel, sweet_spot, backspin,
+#   recovery, max_speed }
 static var _clubs: Array[Dictionary] = []
 
 
@@ -34,6 +35,7 @@ static func _load_clubs() -> void:
 			"roll_decel": float(stats["roll_decel"]),
 			"sweet_spot": float(stats["sweet_spot"]),
 			"backspin": float(stats["backspin"]),
+			"recovery": float(stats["recovery"]),
 		}
 		club["max_speed"] = _find_speed_for_distance(club)
 		_clubs.append(club)
@@ -53,39 +55,62 @@ static func _find_speed_for_distance(club: Dictionary) -> float:
 	return (low + high) / 2.0
 
 
+## The club as it plays from this lie (the surface the ball sits on). Rough, mud and
+## potholes cut power and shrink the sweet spot; the club's "recovery" (0..1) cancels
+## that much of the penalty, so a wedge (recovery 1) plays out of a pothole cleanly.
+static func adjust_for_lie(club: Dictionary, lie: Dictionary) -> Dictionary:
+	var keep: float = 1.0 - club["recovery"]
+	var power_factor: float = 1.0 - (1.0 - lie["lie_power"]) * keep
+	var sweet_factor: float = 1.0 - (1.0 - lie["lie_sweet_spot"]) * keep
+	if power_factor == 1.0 and sweet_factor == 1.0:
+		return club
+	var adjusted := club.duplicate()
+	adjusted["max_speed"] = club["max_speed"] * power_factor
+	adjusted["sweet_spot"] = club["sweet_spot"] * sweet_factor
+	adjusted["max_distance"] = simulate_distance(adjusted["max_speed"], adjusted)
+	return adjusted
+
+
 ## How power (0..1) should be set to hit the ball `distance` metres with this club.
-## Returns 1.0 if the target is further than the club can reach.
-static func suggest_power(club: Dictionary, distance: float) -> float:
-	if distance >= club["max_distance"]:
+## With `surfaces`, the practice shots roll over the hole's real ground from `start`
+## along `direction` (hazards count as fairway, so they don't confuse the maths).
+## Returns exactly 1.0 if even full power falls short.
+static func suggest_power(club: Dictionary, distance: float, start := Vector3.ZERO,
+		direction := Vector3(0, 0, -1), surfaces: SurfaceMap = null) -> float:
+	if simulate_distance(club["max_speed"], club, start, direction, surfaces) < distance:
 		return 1.0
 	var low := 0.0
 	var high := 1.0
 	for i in 12:
 		var middle := (low + high) / 2.0
-		if simulate_distance(club["max_speed"] * middle, club) < distance:
+		if simulate_distance(club["max_speed"] * middle, club, start, direction, surfaces) < distance:
 			low = middle
 		else:
 			high = middle
 	return (low + high) / 2.0
 
 
-## Hit a practice ball off-screen (no wind, dead straight) and measure how far it
-## travels in total, including bounces and roll.
-static func simulate_distance(speed: float, club: Dictionary) -> float:
-	var path := simulate_path(Vector3.ZERO, Vector3(0, 0, -1), speed, club)
+## Hit a practice ball (no wind, dead straight) and measure how far it travels in
+## total, including bounces and roll. Without `surfaces` it's all fairway.
+static func simulate_distance(speed: float, club: Dictionary, start := Vector3.ZERO,
+		direction := Vector3(0, 0, -1), surfaces: SurfaceMap = null) -> float:
+	var path := simulate_path(start, direction, speed, club, surfaces, false)
 	var end := path[path.size() - 1]
-	return Vector2(end.x, end.z).length()
+	return Vector2(end.x - start.x, end.z - start.z).length()
 
 
 ## Hit a practice ball from `start` along the flat `direction` (no wind, no sidespin)
 ## and return every position it passes through, one per physics tick, until it stops.
-## Used for the distance calculations above and for the dotted aim arc.
+## Used for the distance calculations above and for the dotted aim arc (which, with
+## `hazards` on, stops where the ball would splash down or go out of bounds).
 static func simulate_path(start: Vector3, direction: Vector3, speed: float,
-		club: Dictionary) -> PackedVector3Array:
+		club: Dictionary, surfaces: SurfaceMap = null, hazards := true) -> PackedVector3Array:
 	var practice_ball := BallPhysics.new()
 	practice_ball.cup_position = Vector3(1000000, 0, 1000000)  # Far away so it can't "hole out".
 	practice_ball.roll_decel = club["roll_decel"]
 	practice_ball.backspin = club["backspin"]
+	practice_ball.surfaces = surfaces
+	practice_ball.hazards_enabled = hazards
 	practice_ball.place_at(start)
 	practice_ball.launch(launch_velocity(club, direction, speed))
 	var path := PackedVector3Array([practice_ball.position])

@@ -3,5 +3,15 @@
 	"par": 5,
 	"tee": [30, 0, 20],
 	"cup": [-25, 0, -90],
-	"wind_mph": [5, 15]
+	"wind_mph": [5, 15],
+	"bounds": { "rect": [2.5, -35], "size": [50, 165], "angle": -26.6 },
+	"surfaces": [
+		{ "type": "fairway", "rect": [2.5, -35], "size": [18, 135], "angle": -26.6 },
+		{ "type": "tee", "rect": [30, 20], "size": [6, 6], "angle": -26.6 },
+		{ "type": "mud", "polygon": [[2, -28], [9, -30], [11, -38], [4, -41], [0, -35]] },
+		{ "type": "green", "circle": [-25, -90], "radius": 9 },
+		{ "type": "pothole", "circle": [-12, -70], "radius": 2.0 },
+		{ "type": "pothole", "circle": [-8, -76], "radius": 1.6 },
+		{ "type": "pothole", "circle": [-17, -78], "radius": 1.8 }
+	]
 }
