@@ -5,40 +5,79 @@ extends RefCounted
 ## The data file gives each club a max_distance in metres (easy to tweak). We turn
 ## that into a launch speed by running practice shots through the real BallPhysics
 ## code, so what the file says is what you actually get in game.
+##
+## Clubs have levels (1 to max_level). The file lists level 1 and top-level stats;
+## levels in between are spread evenly. The player's levels live in SaveSystem.
 
 const CLUBS_FILE := "res://data/clubs.json"
 const SIM_STEP := 1.0 / 60.0
 const SIM_MAX_STEPS := 60 * 30  # Give up on a practice shot after 30 seconds.
 
-# Filled the first time it's needed, then reused. Each club is a Dictionary:
-# { name, level, two_tap, max_distance, launch_angle, roll_decel, sweet_spot, backspin,
-#   recovery, max_speed }
-static var _clubs: Array[Dictionary] = []
+# The raw entries from clubs.json, loaded once.
+static var _entries: Array = []
+static var _max_level := 10
+# Clubs already worked out, by "name:level". Each club is a Dictionary:
+# { name, level, max_level, two_tap, max_distance, launch_angle, roll_decel,
+#   sweet_spot, backspin, recovery, max_speed }
+static var _built: Dictionary = {}
 
 
+## Every club, at the level the player has upgraded it to.
 static func get_clubs() -> Array[Dictionary]:
-	if _clubs.is_empty():
-		_load_clubs()
-	return _clubs
+	var clubs: Array[Dictionary] = []
+	for entry in _club_entries():
+		clubs.append(get_club(entry["name"], SaveSystem.club_level(entry["name"])))
+	return clubs
 
 
-static func _load_clubs() -> void:
-	var data = JSON.parse_string(FileAccess.get_file_as_string(CLUBS_FILE))
-	for entry in data["clubs"]:
-		var stats: Dictionary = entry["level_1"]  # Only level 1 exists until progression (Milestone 5).
-		var club := {
-			"name": entry["name"],
-			"level": 1,
-			"two_tap": bool(entry.get("two_tap", false)),
-			"max_distance": float(stats["max_distance"]),
-			"launch_angle": float(stats["launch_angle"]),
-			"roll_decel": float(stats["roll_decel"]),
-			"sweet_spot": float(stats["sweet_spot"]),
-			"backspin": float(stats["backspin"]),
-			"recovery": float(stats["recovery"]),
-		}
-		club["max_speed"] = _find_speed_for_distance(club)
-		_clubs.append(club)
+static func club_names() -> Array[String]:
+	var names: Array[String] = []
+	for entry in _club_entries():
+		names.append(entry["name"])
+	return names
+
+
+static func max_level() -> int:
+	_club_entries()
+	return _max_level
+
+
+## One club's stats at a given level.
+static func get_club(club_name: String, level: int) -> Dictionary:
+	level = clampi(level, 1, max_level())
+	var key := "%s:%d" % [club_name, level]
+	if not _built.has(key):
+		_built[key] = _build_club(club_name, level)
+	return _built[key]
+
+
+static func _club_entries() -> Array:
+	if _entries.is_empty():
+		var data = JSON.parse_string(FileAccess.get_file_as_string(CLUBS_FILE))
+		_max_level = int(data.get("max_level", 10))
+		_entries = data["clubs"]
+	return _entries
+
+
+static func _build_club(club_name: String, level: int) -> Dictionary:
+	var entry: Dictionary = {}
+	for candidate in _club_entries():
+		if candidate["name"] == club_name:
+			entry = candidate
+	var first: Dictionary = entry["level_1"]
+	var top: Dictionary = entry.get("level_%d" % _max_level, {})
+	# 0 at level 1, 1 at the top level.
+	var progress := float(level - 1) / float(maxi(_max_level - 1, 1))
+	var club := {
+		"name": club_name,
+		"level": level,
+		"max_level": _max_level,
+		"two_tap": bool(entry.get("two_tap", false)),
+	}
+	for stat in first:
+		club[stat] = lerpf(float(first[stat]), float(top.get(stat, first[stat])), progress)
+	club["max_speed"] = _find_speed_for_distance(club)
+	return club
 
 
 ## Launch speed (m/s) at which the club's practice shot travels exactly max_distance.

@@ -1,9 +1,26 @@
 {
-	"_notes": "Level 1 stats. max_distance = metres the ball travels in total (flight + roll) at 100% power on flat ground with no wind. launch_angle = degrees above the ground. roll_decel = how fast rolling slows the ball (m/s^2): bigger = stops sooner. sweet_spot = half-width of the green zone on the accuracy bar (0..1): bigger = more forgiving. backspin = 0..1, forward speed lost on the first landing. recovery = 0..1, how much of a bad lie's penalty (rough, mud, pothole) the club cancels. two_tap = power only, no accuracy tap (putter). To add a club, add an entry here.",
+	"_notes": "Each club has level_1 stats and level_10 stats; levels in between are spread evenly. A stat missing from level_10 stays the same at every level. max_distance = metres the ball travels in total (flight + roll) at 100% power on flat ground with no wind. launch_angle = degrees above the ground. roll_decel = how fast rolling slows the ball (m/s^2): bigger = stops sooner. sweet_spot = half-width of the green zone on the accuracy bar (0..1): bigger = more forgiving. backspin = 0..1, forward speed lost on the first landing. recovery = 0..1, how much of a bad lie's penalty (rough, mud, pothole) the club cancels. two_tap = power only, no accuracy tap (putter). To add a club, add an entry here.",
+	"max_level": 10,
 	"clubs": [
-		{ "name": "Driver", "level_1": { "max_distance": 130, "launch_angle": 28, "roll_decel": 2.0, "sweet_spot": 0.08, "backspin": 0.0, "recovery": 0.0 } },
-		{ "name": "Irons",  "level_1": { "max_distance": 90,  "launch_angle": 38, "roll_decel": 3.0, "sweet_spot": 0.10, "backspin": 0.15, "recovery": 0.3 } },
-		{ "name": "Wedge",  "level_1": { "max_distance": 50,  "launch_angle": 55, "roll_decel": 5.5, "sweet_spot": 0.12, "backspin": 0.5, "recovery": 1.0 } },
-		{ "name": "Putter", "two_tap": true, "level_1": { "max_distance": 25,  "launch_angle": 3,  "roll_decel": 1.5, "sweet_spot": 0.12, "backspin": 0.0, "recovery": 0.0 } }
+		{
+			"name": "Driver",
+			"level_1":  { "max_distance": 130, "launch_angle": 28, "roll_decel": 2.0, "sweet_spot": 0.08, "backspin": 0.0, "recovery": 0.0 },
+			"level_10": { "max_distance": 175, "sweet_spot": 0.14, "recovery": 0.4 }
+		},
+		{
+			"name": "Irons",
+			"level_1":  { "max_distance": 90, "launch_angle": 38, "roll_decel": 3.0, "sweet_spot": 0.10, "backspin": 0.15, "recovery": 0.3 },
+			"level_10": { "max_distance": 120, "sweet_spot": 0.16, "recovery": 0.7 }
+		},
+		{
+			"name": "Wedge",
+			"level_1":  { "max_distance": 50, "launch_angle": 55, "roll_decel": 5.5, "sweet_spot": 0.12, "backspin": 0.5, "recovery": 1.0 },
+			"level_10": { "max_distance": 65, "sweet_spot": 0.18 }
+		},
+		{
+			"name": "Putter", "two_tap": true,
+			"level_1":  { "max_distance": 25, "launch_angle": 3, "roll_decel": 1.5, "sweet_spot": 0.12, "backspin": 0.0, "recovery": 0.0 },
+			"level_10": { "max_distance": 30, "sweet_spot": 0.20, "recovery": 0.5 }
+		}
 	]
 }

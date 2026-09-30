@@ -113,7 +113,7 @@ After each round, XP is calculated from performance:
 - **Pause button** opens the pause menu.
 
 **Pause menu:** Resume, Settings (sound, haptics), Quit Round. That's it.
-- **No Restart Hole.** Quitting a round abandons it (no XP or record for an abandoned round; **[DECIDE]** whether to keep XP for holes completed).
+- **No Restart Hole.** Quitting a round abandons it (no XP or record for an abandoned round, not even for holes already completed; decided).
 - Keep it fast: the game should never make the player wait or dig through menus.
 
 **Feel: arcade-like.** Snappy and responsive. Instant input response, short transitions, quick camera cuts, fast hole loading, punchy hit effects, satisfying sound/haptics on perfect shots, and short celebratory animations (skippable). Menus and result screens should be quick and never block play.
@@ -235,11 +235,10 @@ Ideas to lock in (rename/swap as you like). Mix of environment, hazard type, and
 
 ## 13. Open Questions **[DECIDE]**
 
-- Quitting a round: keep XP for holes already completed?
 - Ads: revisit after core game is built.
 - Game name?
 
-**Decided so far:** Godot 4 (GDScript); portrait; wind affects ball only (with MPH meter + visible trails); one Irons club at launch; club select on-screen with arrows; no restart hole; arcade-like HD style; no leaderboards for now (may revisit later).
+**Decided so far:** Godot 4 (GDScript); portrait; wind affects ball only (with MPH meter + visible trails); one Irons club at launch; club select on-screen with arrows; no restart hole; arcade-like HD style; no leaderboards for now (may revisit later); XP is a currency spent on club upgrades in a Clubs screen (player picks which club, each level costs more); quitting a round earns no XP.
 
 ---
 *Add new sections below as the idea grows.*

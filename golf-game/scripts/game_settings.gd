@@ -1,13 +1,8 @@
 class_name GameSettings
 extends RefCounted
-## Player settings, saved to the phone so they survive restarts. Nothing listens to
-## them yet (there's no audio or haptics until Milestone 8).
-##
-## The file has a version number from day one, so future updates can read old saves.
-## When the SaveSystem arrives (Milestone 5) it can take this file over.
-
-const SAVE_PATH := "user://settings.json"
-const SAVE_VERSION := 1
+## Player settings. They're stored in the SaveSystem's file so everything the game
+## remembers lives in one place. Nothing listens to them yet (there's no audio or
+## haptics until Milestone 8).
 
 static var sound_on := true
 static var haptics_on := true
@@ -19,23 +14,11 @@ static func _static_init() -> void:
 
 
 static func load_settings() -> void:
-	if not FileAccess.file_exists(SAVE_PATH):
-		return  # First launch: keep the defaults.
-	var data = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
-	if not data is Dictionary:
-		push_warning("Settings file is unreadable; using defaults.")
-		return
-	sound_on = bool(data.get("sound_on", sound_on))
-	haptics_on = bool(data.get("haptics_on", haptics_on))
+	sound_on = bool(SaveSystem.setting("sound_on", true))
+	haptics_on = bool(SaveSystem.setting("haptics_on", true))
 
 
 static func save_settings() -> void:
-	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if file == null:
-		push_error("Could not save settings: %s" % error_string(FileAccess.get_open_error()))
-		return
-	file.store_string(JSON.stringify({
-		"version": SAVE_VERSION,
-		"sound_on": sound_on,
-		"haptics_on": haptics_on,
-	}, "\t"))
+	SaveSystem.set_setting("sound_on", sound_on)
+	SaveSystem.set_setting("haptics_on", haptics_on)
+	SaveSystem.save_game()

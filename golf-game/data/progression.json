@@ -1,0 +1,11 @@
+{
+	"_notes": "XP earned for a finished round, and what club upgrades cost. round_complete = base XP by number of holes. hole = XP for each hole's score. perfect_timing / perfect_power = per shot (a Perfect shot usually earns both; putts only have power). per_stroke_under_par = bonus for each stroke the round finishes under par. upgrade_cost[i] = XP to go from level i+1 to level i+2 (so the first number is level 1 -> 2). A quit round earns nothing.",
+	"xp": {
+		"round_complete": { "3": 40, "9": 150, "18": 350 },
+		"hole": { "Ace": 250, "Eagle": 150, "Birdie": 60, "Par": 20, "Bogey": 5, "Double Bogey+": 0 },
+		"perfect_timing": 15,
+		"perfect_power": 15,
+		"per_stroke_under_par": 40
+	},
+	"upgrade_cost": [150, 250, 400, 600, 850, 1150, 1500, 1900, 2400]
+}
