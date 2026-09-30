@@ -1,5 +1,5 @@
 {
-	"_notes": "How each kind of ground plays. Numbers are multipliers on top of the club's own values, so fairway = 1 everywhere. roll = how fast rolling slows the ball (bigger = stops sooner). bounce = how much speed a bounce keeps (smaller = the ball dies). lie_power / lie_sweet_spot = next shot from here: fraction of max power, and of the club's sweet-spot window (a club's 'recovery' cancels part of this). penalty = 'water' (drop near where it went in, +1) or 'oob' (replay from the previous spot, +1). color = how it's drawn. To add a surface, add an entry here and use it in a hole file.",
+	"_notes": "How each kind of ground plays. look = which drawing style a themed hole uses for it (see shaders/town/ground.gdshader); holes without a scenery scene draw flat colours instead. Numbers are multipliers on top of the club's own values, so fairway = 1 everywhere. roll = how fast rolling slows the ball (bigger = stops sooner). bounce = how much speed a bounce keeps (smaller = the ball dies). lie_power / lie_sweet_spot = next shot from here: fraction of max power, and of the club's sweet-spot window (a club's 'recovery' cancels part of this). penalty = 'water' (drop near where it went in, +1) or 'oob' (replay from the previous spot, +1). color = how it's drawn. To add a surface, add an entry here and use it in a hole file.",
 	"default": "rough",
 	"surfaces": {
 		"fairway": { "label": "Fairway", "color": "#5fb548", "roll": 1.0, "bounce": 1.0, "lie_power": 1.0,  "lie_sweet_spot": 1.0 },
@@ -9,6 +9,8 @@
 		"pothole": { "label": "Pothole", "color": "#3b3b40", "roll": 6.0, "bounce": 0.3, "lie_power": 0.6,  "lie_sweet_spot": 0.5 },
 		"mud":     { "label": "Mud",     "color": "#6b4a2b", "roll": 8.0, "bounce": 0.15, "lie_power": 0.7, "lie_sweet_spot": 0.6 },
 		"water":   { "label": "Water",   "color": "#2f80d8", "penalty": "water" },
+		"street":  { "label": "Street",  "color": "#45454c", "roll": 0.8, "bounce": 1.15, "lie_power": 0.95, "lie_sweet_spot": 0.85 },
+		"sidewalk": { "label": "Sidewalk", "color": "#b9b4aa", "roll": 0.9, "bounce": 1.1, "lie_power": 0.95, "lie_sweet_spot": 0.85 },
 		"oob":     { "label": "Out of Bounds", "color": "#56644f", "penalty": "oob" }
 	}
 }

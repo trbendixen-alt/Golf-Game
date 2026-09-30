@@ -1,0 +1,13 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://shaders/town/ground.gdshader" id="1_in13n"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_in13n")
+shader_parameter/kind = 4
+shader_parameter/street_half = 5.0
+shader_parameter/street_end_z = -82.0
+shader_parameter/crosswalk_z = Vector2(-31, -78)
+shader_parameter/mask_rect = Vector4(0, 0, 1, 1)
+shader_parameter/mask_strength = 0.0

@@ -1,0 +1,16 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://shaders/town/building_lite.gdshader" id="1_lryu1"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_lryu1")
+shader_parameter/glass_tint = Color(0.16, 0.22, 0.28, 1)
+shader_parameter/lit_ratio = 0.1
+shader_parameter/interior_color = Color(1, 0.72, 0.42, 1)
+shader_parameter/interior_energy = 0.8
+shader_parameter/glint_strength = 9.0
+shader_parameter/glint_sharpness = 600.0
+shader_parameter/floor_height = 3.2
+shader_parameter/ground_floor_height = 3.8
+shader_parameter/window_spacing = 2.6

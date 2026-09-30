@@ -4,7 +4,7 @@ extends Control
 ## (max distance, sweet spot, recovery from bad lies) and what it costs.
 
 const SCENE := "res://scenes/clubs.tscn"
-const HIGHLIGHT := Color(1.0, 0.9, 0.2)
+const HIGHLIGHT := Color("#ffd84a")
 const PANEL_COLOR := Color(0, 0, 0, 0.3)
 
 ## Where BACK goes. Set by open().
@@ -30,13 +30,13 @@ func _ready() -> void:
 func _rebuild() -> void:
 	for child in _column.get_children():
 		child.queue_free()
-	_column.add_child(UiHelpers.make_label("CLUBS", 90))
+	_column.add_child(UiHelpers.make_title("CLUBS", 130))
 	var balance := UiHelpers.make_label("%d XP" % SaveSystem.xp(), 64)
 	balance.add_theme_color_override("font_color", HIGHLIGHT)
 	_column.add_child(balance)
 	for club_name in ClubSystem.club_names():
 		_column.add_child(_club_panel(club_name))
-	_column.add_child(UiHelpers.make_button("BACK", _on_back_pressed))
+	_column.add_child(UiHelpers.make_button("BACK", _on_back_pressed, "OrangeButton"))
 
 
 func _club_panel(club_name: String) -> PanelContainer:
@@ -46,11 +46,7 @@ func _club_panel(club_name: String) -> PanelContainer:
 	var next := club if maxed else ClubSystem.get_club(club_name, level + 1)
 
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = PANEL_COLOR
-	style.set_corner_radius_all(24)
-	style.set_content_margin_all(28)
-	panel.add_theme_stylebox_override("panel", style)
+	panel.theme_type_variation = "CardPanel"
 	var rows := VBoxContainer.new()
 	rows.add_theme_constant_override("separation", 10)
 	panel.add_child(rows)

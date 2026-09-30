@@ -91,3 +91,35 @@ static func any_upgrade_affordable() -> bool:
 		if can_upgrade(club_name):
 			return true
 	return false
+
+
+# ---------------------------------------------------------------------------
+# Player level and top club (shown in the main menu's chips)
+# ---------------------------------------------------------------------------
+
+## The player's level, worked out from all the XP they have ever earned (spending XP on
+## upgrades never lowers it). Level 1 is where everyone starts.
+static func player_level() -> int:
+	return level_for(int(SaveSystem.data()["lifetime_xp"]))
+
+
+static func level_for(lifetime_xp: int) -> int:
+	var thresholds: Array = rules()["player_level_xp"]
+	var level := 1
+	for i in thresholds.size():
+		if lifetime_xp >= int(thresholds[i]):
+			level = i + 1
+	var last := int(thresholds[thresholds.size() - 1])
+	if lifetime_xp > last:
+		level = thresholds.size() + int(floor(float(lifetime_xp - last) / float(rules()["player_level_step"])))
+	return level
+
+
+## The club with the highest upgrade level: { name, level }. The first club wins a tie.
+static func top_club() -> Dictionary:
+	var best := {"name": "", "level": 0}
+	for club_name in ClubSystem.club_names():
+		var level := SaveSystem.club_level(club_name)
+		if level > best["level"]:
+			best = {"name": club_name, "level": level}
+	return best

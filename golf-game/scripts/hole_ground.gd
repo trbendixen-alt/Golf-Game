@@ -11,7 +11,20 @@ const LAYER_GAP := 0.004     # Height between stacked zones, in metres.
 const STAKE_SPACING := 6.0   # Metres between out-of-bounds stakes.
 
 ## Set before adding to the scene.
+## A themed hole (one with its own scenery scene) draws its ground with the town ground
+## shader instead of flat colours. `theme` then holds: sun_mask (Texture2D), mask_rect
+## (Rect2), street_half, street_end_z, crosswalk_z (Vector2) and stakes (bool).
+## Leave it empty for the plain flat-colour look.
+var theme := {}
 var surfaces: SurfaceMap
+# Which shader "kind" draws each surface in a themed hole (see ground.gdshader).
+const THEME_KINDS := {
+	"street": 0, "sidewalk": 1, "rough": 2, "green": 3, "oob": 4, "fairway": 5, "tee": 6,
+}
+const GROUND_SHADER := "res://shaders/town/ground.gdshader"
+
+var _themed_materials := {}
+
 ## Where the base plane is centred (the middle of the hole).
 var centre := Vector3.ZERO
 ## Height just above the top zone. Anything painted on the ground goes here.
@@ -32,14 +45,17 @@ func _ready() -> void:
 	var height := LAYER_GAP
 	if not surfaces.bounds.is_empty():
 		_add_flat_polygon(surfaces.bounds, surfaces.ground, height)
-		_add_stakes(surfaces.bounds, height)
+		if theme.get("stakes", true):
+			_add_stakes(surfaces.bounds, height)
 		height += LAYER_GAP
 	for zone in surfaces.zones:
 		_add_flat_polygon(zone["points"], zone["type"], height)
 		height += LAYER_GAP
 	top_height = height
-	for part in surfaces.obstacles.parts:
-		_add_obstacle_part(part)
+	# A themed hole's scenery scene already draws its obstacles (cars, buildings...).
+	if theme.is_empty():
+		for part in surfaces.obstacles.parts:
+			_add_obstacle_part(part)
 
 
 ## One box or cylinder of an obstacle, standing on the ground. (Placeholder shapes:
@@ -77,8 +93,19 @@ func _add_flat_polygon(points: PackedVector2Array, type_name: String, height: fl
 	var tool := SurfaceTool.new()
 	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
 	tool.set_normal(Vector3.UP)
-	for index in triangles:
-		tool.add_vertex(Vector3(points[index].x, height, points[index].y))
+	# Godot draws a triangle's front when its corners run clockwise as seen from the
+	# front. Make sure every triangle faces UP, whichever way the triangulation wound it.
+	for i in range(0, triangles.size(), 3):
+		var a := Vector3(points[triangles[i]].x, height, points[triangles[i]].y)
+		var b := Vector3(points[triangles[i + 1]].x, height, points[triangles[i + 1]].y)
+		var c := Vector3(points[triangles[i + 2]].x, height, points[triangles[i + 2]].y)
+		if (b - a).cross(c - a).y > 0.0:
+			var swap := b
+			b = c
+			c = swap
+		tool.add_vertex(a)
+		tool.add_vertex(b)
+		tool.add_vertex(c)
 	var instance := MeshInstance3D.new()
 	instance.mesh = tool.commit()
 	instance.material_override = _material(type_name)
@@ -113,11 +140,32 @@ func _add_stakes(outline: PackedVector2Array, height: float) -> void:
 	add_child(instance)
 
 
-func _material(type_name: String) -> StandardMaterial3D:
+func _material(type_name: String) -> Material:
+	if not theme.is_empty() and THEME_KINDS.has(type_name):
+		return _themed_material(THEME_KINDS[type_name])
 	var material := StandardMaterial3D.new()
 	material.albedo_color = SurfaceMap.get_type(type_name)["color"]
 	material.cull_mode = BaseMaterial3D.CULL_DISABLED  # Visible whichever way the triangles wind.
 	if type_name == "water":
 		material.roughness = 0.05
 		material.metallic_specular = 1.0
+	return material
+
+
+## The town ground shader set to draw one kind of surface. Shared by every zone of that
+## kind, and handed the baked sun-shadow mask.
+func _themed_material(kind: int) -> ShaderMaterial:
+	if _themed_materials.has(kind):
+		return _themed_materials[kind]
+	var material := ShaderMaterial.new()
+	material.shader = load(GROUND_SHADER)
+	material.set_shader_parameter("kind", kind)
+	material.set_shader_parameter("street_half", theme.get("street_half", 5.0))
+	material.set_shader_parameter("street_end_z", theme.get("street_end_z", -82.0))
+	material.set_shader_parameter("crosswalk_z", theme.get("crosswalk_z", Vector2(-31.0, -78.0)))
+	if theme.has("sun_mask"):
+		material.set_shader_parameter("sun_mask", theme["sun_mask"])
+		material.set_shader_parameter("mask_rect", Vector4(theme["mask_rect"].position.x,
+				theme["mask_rect"].position.y, theme["mask_rect"].size.x, theme["mask_rect"].size.y))
+	_themed_materials[kind] = material
 	return material

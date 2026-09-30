@@ -89,6 +89,9 @@ func _arg(key: String) -> String:
 
 func _register_shader_globals() -> void:
 	var rs := RenderingServer
+	# The project now declares these globals itself (project.godot > Shader Globals).
+	if rs.global_shader_parameter_get_list().has(&"sun_dir"):
+		return
 	rs.global_shader_parameter_add("sun_dir", RenderingServer.GLOBAL_VAR_TYPE_VEC3, Vector3(0, 0.1, -1))
 	rs.global_shader_parameter_add("sun_color", RenderingServer.GLOBAL_VAR_TYPE_COLOR, Color(1, 0.7, 0.4, 2.0))
 	rs.global_shader_parameter_add("wind_vec", RenderingServer.GLOBAL_VAR_TYPE_VEC3, Vector3(3.0, 0.0, 1.0))

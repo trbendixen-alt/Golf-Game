@@ -28,7 +28,7 @@ func _ready() -> void:
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(0.04, 0.04, 1.0)
 	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(1, 1, 1, 0.55)
+	material.albedo_color = Color(1, 1, 1, 0.28)
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mesh.material = material
