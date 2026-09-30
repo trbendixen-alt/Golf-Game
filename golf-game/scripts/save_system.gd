@@ -1,7 +1,7 @@
 class_name SaveSystem
 extends RefCounted
 ## Everything the game remembers between launches, in one JSON file on the phone:
-## XP, club levels and settings (round history joins it in Milestone 6).
+## XP, club levels, settings and the history of every finished round.
 ##
 ## The file carries a version number. When a later update changes the layout, bump
 ## SAVE_VERSION and add a step to _migrate() so old saves keep working.
@@ -9,7 +9,7 @@ extends RefCounted
 ## Saving writes to a temporary file first and then swaps it in, so a crash or a
 ## dead battery halfway through can't leave a half-written save behind.
 
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2  # 2 = added the "rounds" history (Milestone 6).
 const OLD_SETTINGS_PATH := "user://settings.json"  # Where settings lived before this file.
 
 ## Tests point this somewhere else so they never touch the player's real save.
@@ -26,6 +26,7 @@ static func defaults() -> Dictionary:
 		"lifetime_xp": 0,    # Every XP ever earned (never goes down).
 		"club_levels": {},   # Club name -> level. Missing = level 1.
 		"settings": {"sound_on": true, "haptics_on": true},
+		"rounds": [],        # One record per finished round. See Records.make_record().
 	}
 
 
@@ -40,6 +41,9 @@ static func load_game() -> void:
 	var path := save_path
 	if not FileAccess.file_exists(path) and FileAccess.file_exists(path + ".tmp"):
 		path += ".tmp"  # A save was cut off right before the swap; the new copy is complete.
+	if not FileAccess.file_exists(path):
+		_import_save_from_old_title_folder()
+		path = save_path
 	if not FileAccess.file_exists(path):
 		_data = defaults()
 		_import_old_settings()
@@ -83,10 +87,43 @@ static func _migrate(loaded: Dictionary) -> Dictionary:
 	result["lifetime_xp"] = int(result["lifetime_xp"])
 	for club_name in result["club_levels"]:
 		result["club_levels"][club_name] = int(result["club_levels"][club_name])
-	# Future layout changes go here, e.g.:
-	#   if int(loaded.get("version", 0)) < 2: ...move things around...
+	_fix_round_numbers(result["rounds"])
+	# Version 1 saves had no "rounds" list; the defaults above already gave them an
+	# empty one, so nothing else is needed. Future layout changes go here, e.g.:
+	#   if int(loaded.get("version", 0)) < 3: ...move things around...
 	result["version"] = SAVE_VERSION
 	return result
+
+
+## JSON turns whole numbers into floats, so put the round history's numbers right.
+static func _fix_round_numbers(rounds: Array) -> void:
+	for round_record in rounds:
+		for key in ["mode", "total_strokes", "total_par", "vs_par", "putts", "xp", "perfect_shots"]:
+			round_record[key] = int(round_record.get(key, 0))
+		round_record["longest_drive"] = float(round_record.get("longest_drive", 0.0))
+		for hole in round_record.get("holes", []):
+			for key in ["par", "strokes", "putts"]:
+				hole[key] = int(hole.get(key, 0))
+
+
+## Wipe EVERYTHING (XP, club levels, settings, round history) and save the empty
+## file. This is the debug "reset saved data" option, for testing first-time behaviour.
+static func reset_all() -> void:
+	_data = defaults()
+	save_game()
+	GameSettings.load_settings()  # Put the in-memory settings back to their defaults too.
+
+
+## The game used to be called "Golf Game", and Godot keeps saves in a folder named after the
+## game. After the rename to "Street Golf" that folder is new and empty, so the first launch
+## copies an existing save across (desktop testing only; phones never had the old folder).
+## This can be deleted once nobody has a save from before the rename.
+static func _import_save_from_old_title_folder() -> void:
+	if save_path != "user://save.json":
+		return  # Tests use their own save path.
+	var old_save := OS.get_user_data_dir().get_base_dir().path_join("Golf Game").path_join("save.json")
+	if FileAccess.file_exists(old_save):
+		DirAccess.copy_absolute(old_save, ProjectSettings.globalize_path(save_path))
 
 
 ## Settings used to have their own file. Bring them across once.
