@@ -1,8 +1,8 @@
 class_name HoleGround
 extends Node3D
 ## Draws a hole's ground from its SurfaceMap: a big base plane, the playable area,
-## every surface zone (fairway, green, water, potholes...) and white out-of-bounds
-## stakes around the edge.
+## every surface zone (fairway, green, water, potholes...), white out-of-bounds
+## stakes around the edge, and the solid obstacles (cars, walls, hay bales...).
 ##
 ## Everything is flat. Zones are stacked a few millimetres apart in draw order so they
 ## don't flicker where they overlap; the ball physics still treats y = 0 as the ground.
@@ -38,6 +38,34 @@ func _ready() -> void:
 		_add_flat_polygon(zone["points"], zone["type"], height)
 		height += LAYER_GAP
 	top_height = height
+	for part in surfaces.obstacles.parts:
+		_add_obstacle_part(part)
+
+
+## One box or cylinder of an obstacle, standing on the ground. (Placeholder shapes:
+## the art pass in Milestone 7 swaps these for real models and instances repeats.)
+func _add_obstacle_part(part: Dictionary) -> void:
+	var mesh: Mesh
+	if part["shape"] == "box":
+		var box := BoxMesh.new()
+		box.size = Vector3(part["half"].x * 2.0, part["height"], part["half"].y * 2.0)
+		mesh = box
+	else:
+		var cylinder := CylinderMesh.new()
+		cylinder.bottom_radius = part["radius"]
+		cylinder.top_radius = part["radius"] * (0.15 if part["taper"] else 1.0)
+		cylinder.height = part["height"]
+		mesh = cylinder
+	var material := StandardMaterial3D.new()
+	material.albedo_color = part["color"]
+	var instance := MeshInstance3D.new()
+	instance.mesh = mesh
+	instance.material_override = material
+	# Meshes are centred on their middle, so lift by half the height. A negative
+	# turn around UP is clockwise from above, matching the hole file's "angle".
+	instance.transform = Transform3D(Basis(Vector3.UP, -part["angle"]),
+			Vector3(part["centre"].x, part["height"] / 2.0, part["centre"].y))
+	add_child(instance)
 
 
 ## A flat polygon lying on the ground at `height`, coloured by its surface type.

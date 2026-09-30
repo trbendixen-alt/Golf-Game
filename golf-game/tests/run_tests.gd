@@ -313,9 +313,118 @@ func test_penalty_cant_push_score_past_the_cap() -> void:
 func test_hole_files_are_playable() -> void:
 	var rounds := RoundManagerScript.new()
 	for hole in rounds._load_all_holes():
-		var map := SurfaceMap.new(hole["surfaces"], hole["bounds"], hole["ground"])
+		var map := SurfaceMap.new(hole["surfaces"], hole["bounds"], hole["ground"],
+				hole["obstacles"])
 		var tee: Vector3 = hole["tee"]
 		var cup: Vector3 = hole["cup"]
 		check(map.surface_at(tee)["penalty"] == "", "%s: tee is playable" % hole["name"])
 		check(map.type_at(cup.x, cup.z) == "green", "%s: cup is on the green" % hole["name"])
+		check(not map.obstacles.covers(tee.x, tee.z), "%s: nothing parked on the tee" % hole["name"])
+		check(not map.obstacles.covers(cup.x, cup.z), "%s: nothing parked on the cup" % hole["name"])
 	rounds.free()
+
+
+# ---------------------------------------------------------------------------
+# Solid obstacles
+# ---------------------------------------------------------------------------
+
+## A ball moving with `velocity` from `start` over `map` until it stops (or 30 s pass).
+## Returns the BallPhysics node; free it when done.
+func _roll_ball(map: SurfaceMap, start: Vector3, velocity: Vector3) -> BallPhysics:
+	var ball := BallPhysics.new()
+	ball.cup_position = Vector3(1000000, 0, 1000000)
+	ball.surfaces = map
+	ball.place_at(start)
+	ball.launch(velocity)
+	var steps := 0
+	while ball.is_moving and steps < 60 * 30:
+		ball.step(1.0 / 60.0)
+		steps += 1
+	return ball
+
+
+func test_ball_bounces_back_off_a_wall() -> void:
+	var map := SurfaceMap.new([], null, "fairway",
+			[{"type": "wall", "at": [0, -10], "size": [6, 0.4, 2], "angle": 0}])
+	var ball := _roll_ball(map, Vector3.ZERO, Vector3(0, 0, -12))
+	check(ball.position.z > -9.5, "ball stays on the near side of the wall (z = %.2f)" % ball.position.z)
+	ball.free()
+
+
+func test_fast_ball_cant_tunnel_through_a_thin_fence() -> void:
+	var map := SurfaceMap.new([], null, "fairway",
+			[{"type": "fence", "at": [0, -5], "size": [6, 0.15, 3], "angle": 0}])
+	# 45 m/s moves 0.75 m per tick, far more than the fence is thick.
+	var ball := _roll_ball(map, Vector3.ZERO, Vector3(0, 1, -45))
+	check(ball.position.z > -5.0, "ball didn't pass through the fence (z = %.2f)" % ball.position.z)
+	ball.free()
+
+
+func test_angled_wall_deflects_sideways() -> void:
+	# A wall turned 45 degrees across the ball's path should knock it off to the side.
+	var map := SurfaceMap.new([], null, "fairway",
+			[{"type": "wall", "at": [0, -8], "size": [0.4, 8, 2], "angle": 45}])
+	var ball := _roll_ball(map, Vector3.ZERO, Vector3(0, 0, -10))
+	check(absf(ball.position.x) > 2.0, "ball deflected sideways (x = %.2f)" % ball.position.x)
+	ball.free()
+
+
+func test_hay_bale_is_softer_than_a_wall() -> void:
+	var wall := SurfaceMap.new([], null, "fairway", [{"type": "wall", "at": [0, -6], "size": [4, 0.4, 2]}])
+	var bale := SurfaceMap.new([], null, "fairway", [{"type": "hay_bale", "at": [0, -6.6]}])
+	var off_wall := _roll_ball(wall, Vector3.ZERO, Vector3(0, 0, -12))
+	var off_bale := _roll_ball(bale, Vector3.ZERO, Vector3(0, 0, -12))
+	check(off_bale.position.z < off_wall.position.z,
+			"bale bounce (%.1f) shorter than wall bounce (%.1f)" % [off_bale.position.z, off_wall.position.z])
+	off_wall.free()
+	off_bale.free()
+
+
+func test_ball_can_sit_on_a_roof_and_roll_off() -> void:
+	var map := SurfaceMap.new([], null, "fairway",
+			[{"type": "building", "at": [0, 0], "size": [10, 10, 5]}])
+	var ball := BallPhysics.new()
+	ball.surfaces = map
+	ball.place_at(Vector3(0, 0, 0))
+	check(is_equal_approx(ball.position.y, 5.0 + BallPhysics.BALL_RADIUS), "placed on the roof")
+	check(map.support_at(ball.position)["surface"]["label"] == "Rooftop", "lie is the rooftop")
+	ball.free()
+	var rolled := _roll_ball(map, Vector3(0, 0, 0), Vector3(0, 0, -12))
+	check(rolled.position.z < -5.0, "rolled off the edge (z = %.2f)" % rolled.position.z)
+	check(is_equal_approx(rolled.position.y, BallPhysics.BALL_RADIUS), "and fell to the ground")
+	rolled.free()
+
+
+func test_ball_lands_on_a_car_roof() -> void:
+	var map := SurfaceMap.new([], null, "fairway", [{"type": "car", "at": [0, 0]}])
+	var ball := _roll_ball(map, Vector3(0, 0, 10), Vector3(0, 0, 0))  # Just to make one.
+	ball.position = Vector3(0, 6, 0)
+	ball.launch(Vector3(0, -3, 0))  # Dropped straight onto the cabin.
+	var steps := 0
+	while ball.is_moving and steps < 600:
+		ball.step(1.0 / 60.0)
+		steps += 1
+	check(ball.position.y > 1.4, "ball rests on the roof (y = %.2f)" % ball.position.y)
+	ball.free()
+
+
+func test_obstacle_physics_is_deterministic() -> void:
+	var map := SurfaceMap.new([], null, "fairway", [
+		{"type": "car", "at": [1, -12], "angle": 20},
+		{"type": "cone", "at": [-1, -8]},
+		{"type": "hay_bale", "at": [0.5, -20]},
+	])
+	var first := _roll_ball(map, Vector3.ZERO, Vector3(0.7, 6, -22))
+	var second := _roll_ball(map, Vector3.ZERO, Vector3(0.7, 6, -22))
+	check(first.position == second.position, "same shot through obstacles ends in the same spot")
+	first.free()
+	second.free()
+
+
+func test_practice_balls_ignore_obstacles() -> void:
+	var map := SurfaceMap.new([], null, "fairway",
+			[{"type": "wall", "at": [0, -5], "size": [6, 0.4, 3]}])
+	var putter: Dictionary = ClubSystem.get_clubs()[3]
+	var path := ClubSystem.simulate_path(Vector3.ZERO, Vector3(0, 0, -1), putter["max_speed"],
+			putter, map, false)
+	check(path[path.size() - 1].z < -10.0, "suggested-power maths rolls through the wall")

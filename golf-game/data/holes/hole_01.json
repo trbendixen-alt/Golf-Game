@@ -11,5 +11,12 @@
 		{ "type": "green", "circle": [0, -40], "radius": 8 },
 		{ "type": "pothole", "circle": [-5, -30], "radius": 2.2 },
 		{ "type": "pothole", "circle": [4.5, -33], "radius": 1.8 }
+	],
+	"obstacles": [
+		{ "type": "cone", "at": [-2.5, -27] },
+		{ "type": "cone", "at": [2.5, -27] },
+		{ "type": "cone", "at": [-6, -25] },
+		{ "type": "cone", "at": [6, -25] },
+		{ "type": "car", "at": [-12, -15], "angle": 10 }
 	]
 }

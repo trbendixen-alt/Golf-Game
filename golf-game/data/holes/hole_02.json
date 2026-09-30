@@ -11,5 +11,11 @@
 		{ "type": "tee", "rect": [-15, 10], "size": [6, 6] },
 		{ "type": "water", "polygon": [[-5, -5], [10, -8], [14, -30], [0, -38], [-6, -25]] },
 		{ "type": "green", "circle": [20, -60], "radius": 9 }
+	],
+	"obstacles": [
+		{ "type": "fence", "at": [-25, -15], "size": [0.15, 40, 1.1] },
+		{ "type": "hay_bale", "at": [-22, -44] },
+		{ "type": "hay_bale", "at": [-19, -47] },
+		{ "type": "hay_bale", "at": [-16, -48.5] }
 	]
 }

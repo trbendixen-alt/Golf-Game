@@ -64,6 +64,8 @@ var suggested_power := 0.0
 var cup_out_of_range := false
 # Where the aim preview's 100% power shot stops (drawn on the mini map).
 var _preview_end := Vector3.ZERO
+# Set while dragging; the arc is redrawn once per frame, not on every finger movement.
+var _preview_dirty := false
 
 # The flat direction (unit vector) the ball is aimed in: always toward the cup.
 var aim_direction := Vector3(0, 0, -1)
@@ -88,7 +90,7 @@ func _ready() -> void:
 	var hole := RoundManager.current_hole()
 	tee_position = hole["tee"]
 	cup_position = hole["cup"]
-	surfaces = SurfaceMap.new(hole["surfaces"], hole["bounds"], hole["ground"])
+	surfaces = SurfaceMap.new(hole["surfaces"], hole["bounds"], hole["ground"], hole["obstacles"])
 	_roll_wind(hole)
 	_build_world()
 	_build_ball()
@@ -296,7 +298,7 @@ func _can_aim() -> bool:
 func _turn_aim(degrees: float) -> void:
 	aim_direction = aim_direction.rotated(Vector3.UP, deg_to_rad(degrees)).normalized()
 	_update_wind_arrow()
-	_update_aim_preview()
+	_preview_dirty = true
 
 
 # ---------------------------------------------------------------------------
@@ -420,6 +422,7 @@ func _update_aim_preview() -> void:
 			shot_club, surfaces)
 	aim_preview.show_path(path)
 	aim_preview.visible = true
+	_preview_dirty = false
 	_preview_end = path[path.size() - 1]
 
 
@@ -452,7 +455,7 @@ func _select_club(index: int) -> void:
 func _update_lie() -> void:
 	if club.is_empty():
 		return  # No club picked yet (still setting up the hole).
-	lie = surfaces.surface_at(ball.position)
+	lie = surfaces.support_at(ball.position)["surface"]  # The ground, or e.g. a car roof.
 	shot_club = ClubSystem.adjust_for_lie(club, lie)
 	shot.sweet_spot = shot_club["sweet_spot"]
 	shot.two_tap = shot_club["two_tap"]
@@ -495,6 +498,8 @@ func _process(delta: float) -> void:
 	var turn := Input.get_axis("ui_left", "ui_right")
 	if turn != 0.0 and _can_aim():
 		_turn_aim(-turn * AIM_KEY_DEGREES_PER_SECOND * delta)
+	if _preview_dirty and _can_aim():
+		_update_aim_preview()
 
 	# Glide toward a spot behind and above the ball, looking down the aim line.
 	var target := ball.position - aim_direction * CAMERA_BACK + Vector3.UP * CAMERA_HEIGHT
