@@ -1,6 +1,6 @@
 class_name SwingMeter
 extends Control
-## Draws the swing meter (a power bar and an accuracy bar). It sits at the bottom of
+## Draws the swing meter (a power bar and an accuracy bar; putts only use power). It sits at the bottom of
 ## the screen, where a thumb can reach. It only *displays* what ShotController tracks.
 
 ## Set by the HUD so we know what to draw.
@@ -35,11 +35,14 @@ func _draw() -> void:
 	var hint := ""
 	match shot.state:
 		ShotController.State.IDLE:
-			hint = "TAP TO START SWING"
+			hint = "DRAG TO AIM  -  TAP TO SWING"
 		ShotController.State.POWER:
-			hint = "TAP TO SET POWER"
+			hint = "TAP TO HIT" if shot.two_tap else "TAP TO SET POWER"
 		ShotController.State.ACCURACY:
 			hint = "TAP TO SET ACCURACY"
+	# Dark outline first so the hint stays readable over the white distance stripes.
+	draw_string_outline(font, Vector2(0, 55), hint,
+			HORIZONTAL_ALIGNMENT_CENTER, size.x, 44, 10, Color.BLACK)
 	draw_string(font, Vector2(0, 55), hint,
 			HORIZONTAL_ALIGNMENT_CENTER, size.x, 44, Color.WHITE)
 
@@ -55,11 +58,13 @@ func _draw() -> void:
 		draw_rect(Rect2(marker_x - 5, power_y - 12, 10, BAR_HEIGHT + 24), MARKER_COLOR)
 
 	# --- Accuracy bar: keep the marker inside the green zone in the middle ---
+	if shot.two_tap:
+		return  # Putts are power only.
 	draw_string(font, Vector2(left, accuracy_y - 12), "ACCURACY",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 32, Color.WHITE)
 	draw_rect(Rect2(left, accuracy_y, bar_width, BAR_HEIGHT), Color(0, 0, 0, 0.6))
 	var centre_x := left + bar_width / 2.0
-	var sweet_width := ShotController.SWEET_SPOT * bar_width
+	var sweet_width := shot.sweet_spot * bar_width
 	draw_rect(Rect2(centre_x - sweet_width / 2.0, accuracy_y, sweet_width, BAR_HEIGHT),
 			Color(0.2, 0.9, 0.3, 0.8))
 	# Only show the marker once the accuracy sweep has begun.

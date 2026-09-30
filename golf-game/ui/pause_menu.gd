@@ -1,8 +1,8 @@
 class_name PauseMenu
 extends CanvasLayer
 ## The pause menu: Resume, Settings and Quit Round. (There's deliberately no
-## "Restart Hole".) The Settings page has sound and haptics toggles, which are
-## placeholders for now.
+## "Restart Hole".) The Settings page has sound and haptics toggles. They're saved,
+## but nothing plays sound or buzzes yet (Milestone 8).
 
 var _main_column: VBoxContainer
 var _settings_column: VBoxContainer
@@ -68,10 +68,12 @@ func _on_quit_pressed() -> void:
 
 func _on_sound_toggled(enabled: bool) -> void:
 	GameSettings.sound_on = enabled
+	GameSettings.save_settings()
 
 
 func _on_haptics_toggled(enabled: bool) -> void:
 	GameSettings.haptics_on = enabled
+	GameSettings.save_settings()
 
 
 ## A big button that flips between "NAME: ON" and "NAME: OFF" each time it's tapped.

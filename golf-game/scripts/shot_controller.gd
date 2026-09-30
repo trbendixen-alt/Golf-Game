@@ -6,7 +6,9 @@ extends Node
 ## Tap 2: set power (bar stops; accuracy marker starts sweeping)
 ## Tap 3: set accuracy (marker stops, shot is fired)
 ##
-## When the third tap happens it emits `shot_fired` and the hole scene launches the ball.
+## With `two_tap` on (the putter) tap 2 fires the shot straight away, dead straight.
+##
+## When the last tap happens it emits `shot_fired` and the hole scene launches the ball.
 
 ## power: 0.0 to 1.0.  accuracy: -1.0 (far left) to 1.0 (far right), 0.0 = perfect.
 signal shot_fired(power: float, accuracy: float)
@@ -16,8 +18,10 @@ enum State { IDLE, POWER, ACCURACY, LOCKED }
 const POWER_SECONDS := 1.0    # Time for the power bar to fill from 0% to 100%.
 const ACCURACY_SECONDS := 0.8 # Time for the marker to cross from far left to far right.
 ## Half-width of the green "sweet spot" in the centre of the accuracy bar (0..1 scale).
-## The swing meter draws this; later milestones will use it for shot quality.
-const SWEET_SPOT := 0.1
+## Comes from the selected club, so better clubs are more forgiving.
+var sweet_spot := 0.1
+## Power-only swing (putter): no accuracy tap.
+var two_tap := false
 
 var state := State.IDLE
 var power := 0.0
@@ -36,9 +40,14 @@ func tap() -> void:
 			power = 0.0
 			_power_direction = 1.0
 		State.POWER:
-			state = State.ACCURACY
-			accuracy = -1.0
-			_accuracy_direction = 1.0
+			if two_tap:
+				state = State.LOCKED
+				accuracy = 0.0
+				shot_fired.emit(power, accuracy)
+			else:
+				state = State.ACCURACY
+				accuracy = -1.0
+				_accuracy_direction = 1.0
 		State.ACCURACY:
 			state = State.LOCKED
 			shot_fired.emit(power, accuracy)

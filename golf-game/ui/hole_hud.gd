@@ -24,6 +24,8 @@ var shot: ShotController
 var _info_label: Label
 var _stroke_label: Label
 var _message_label: Label
+var _quality_label: Label
+var _quality_tween: Tween
 var _wind_meter: WindMeter
 var _mini_map: MiniMap
 var _club_selector: ClubSelector
@@ -86,7 +88,12 @@ func _ready() -> void:
 	_message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	middle.add_child(_message_label)
 
-	# --- Bottom: club selector above the swing meter ---
+	# --- Bottom: shot grade ("PERFECT!"), club selector, swing meter ---
+	_quality_label = _make_label(64)
+	_quality_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_quality_label.modulate.a = 0.0  # Hidden until a shot is graded.
+	page.add_child(_quality_label)
+
 	_club_selector = ClubSelector.new()
 	_club_selector.previous_pressed.connect(previous_club_pressed.emit)
 	_club_selector.next_pressed.connect(next_club_pressed.emit)
@@ -113,6 +120,17 @@ func set_message(text: String) -> void:
 	_message_label.text = text
 
 
+## Briefly show how good the last swing was, then fade it out.
+func flash_quality(tier_name: String, seconds: float) -> void:
+	_quality_label.text = tier_name + "!"
+	_quality_label.modulate.a = 1.0
+	if _quality_tween:
+		_quality_tween.kill()
+	_quality_tween = create_tween()
+	_quality_tween.tween_interval(seconds * 0.6)
+	_quality_tween.tween_property(_quality_label, "modulate:a", 0.0, seconds * 0.4)
+
+
 func set_club(club: Dictionary) -> void:
 	_club_selector.set_club(club)
 
@@ -131,9 +149,9 @@ func set_wind(speed_mph: float, arrow_angle: float) -> void:
 	_wind_meter.set_wind(speed_mph, arrow_angle)
 
 
-func update_map(ball_pos: Vector3, cup_pos: Vector3, aim_dir: Vector3,
+func update_map(ball_pos: Vector3, cup_pos: Vector3, aim_dir: Vector3, shot_end: Vector3,
 		power: float, too_far: bool) -> void:
-	_mini_map.update_map(ball_pos, cup_pos, aim_dir, power, too_far)
+	_mini_map.update_map(ball_pos, cup_pos, aim_dir, shot_end, power, too_far)
 
 
 ## Creates a left-aligned text label with a dark outline so it's readable on any background.
