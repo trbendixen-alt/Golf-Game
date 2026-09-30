@@ -24,13 +24,20 @@ var hole_order: Array[Dictionary] = []
 var current_index := 0
 ## Strokes taken so far on the current hole.
 var strokes := 0
-## Finished holes: an Array of { name, par, strokes }.
+## Finished holes: an Array of { name, par, strokes, term } (term = "Birdie" etc.).
 var results: Array[Dictionary] = []
-## Shot grades this round, for the summary now and XP later (Milestone 5).
+## Shot grades this round, for the summary and XP.
 ## tier_counts[ShotQuality.Tier.PERFECT] = number of Perfect shots, and so on.
 var tier_counts: Array[int] = [0, 0, 0, 0]
 var perfect_timing_shots := 0
 var perfect_power_shots := 0
+## Longest Driver shot this round (metres, start to where it stopped).
+var longest_drive := 0.0
+## Longest shot that went in the hole this round (metres). 0 = none.
+var longest_hole_out := 0.0
+## What the last finished round earned (see ProgressionSystem.round_xp). Filled in
+## when the round ends, just before the summary screen shows it.
+var round_xp: Dictionary = {}
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +72,9 @@ func _reset_shot_stats() -> void:
 	tier_counts = [0, 0, 0, 0]
 	perfect_timing_shots = 0
 	perfect_power_shots = 0
+	longest_drive = 0.0
+	longest_hole_out = 0.0
+	round_xp = {}
 
 
 ## Reads every .json file in data/holes/. Adding a hole = adding a file. No code changes.
@@ -124,6 +134,14 @@ func record_shot(quality: Dictionary) -> void:
 		perfect_power_shots += 1
 
 
+## Remember how far a shot went (shots that end in a penalty don't count).
+func record_shot_distance(club_name: String, distance: float, holed: bool) -> void:
+	if club_name == "Driver":
+		longest_drive = maxf(longest_drive, distance)
+	if holed:
+		longest_hole_out = maxf(longest_hole_out, distance)
+
+
 ## The most strokes allowed on the current hole.
 func stroke_cap() -> int:
 	return current_hole()["par"] + STROKE_CAP_OVER_PAR
@@ -138,11 +156,12 @@ func is_at_stroke_cap() -> bool:
 func record_hole() -> void:
 	var hole := current_hole()
 	strokes = mini(strokes, stroke_cap())
-	results.append({"name": hole["name"], "par": hole["par"], "strokes": strokes})
+	results.append({"name": hole["name"], "par": hole["par"], "strokes": strokes,
+			"term": score_term(strokes, hole["par"])})
 
 
 ## Quit Round from the pause menu: forget the round and go back to the main menu.
-## (An abandoned round earns nothing and isn't recorded.)
+## (An abandoned round earns no XP and isn't recorded, not even for finished holes.)
 func abandon_round() -> void:
 	hole_order.clear()
 	results.clear()
@@ -157,9 +176,18 @@ func next_hole() -> void:
 	current_index += 1
 	strokes = 0
 	if current_index >= hole_order.size():
+		finish_round()
 		get_tree().change_scene_to_file(SUMMARY_SCENE)
 	else:
 		get_tree().change_scene_to_file(HOLE_SCENE)
+
+
+## The last hole is done: work out the XP, bank it and save straight away (so it's
+## kept even if the app is closed on the summary screen).
+func finish_round() -> void:
+	round_xp = ProgressionSystem.round_xp(results, perfect_timing_shots, perfect_power_shots)
+	SaveSystem.add_xp(round_xp["total"])
+	SaveSystem.save_game()
 
 
 # ---------------------------------------------------------------------------

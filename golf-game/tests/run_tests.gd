@@ -12,13 +12,21 @@ var _failures := 0
 var _checks := 0
 
 
+const TEST_SAVE := "user://test_save.json"
+
+
 func _initialize() -> void:
+	# Never touch the player's real save: use a scratch file, starting fresh.
+	SaveSystem.save_path = TEST_SAVE
+	SaveSystem.reset()
 	for method in get_method_list():
 		var method_name: String = method["name"]
 		if method_name.begins_with("test_"):
 			var failures_before := _failures
 			call(method_name)
 			print("%s %s" % ["PASS" if _failures == failures_before else "FAIL", method_name])
+	for leftover in [TEST_SAVE, TEST_SAVE + ".tmp", TEST_SAVE + ".bad"]:
+		DirAccess.remove_absolute(leftover)
 	print("\n%d checks, %d failed" % [_checks, _failures])
 	quit(1 if _failures > 0 else 0)
 
@@ -428,3 +436,131 @@ func test_practice_balls_ignore_obstacles() -> void:
 	var path := ClubSystem.simulate_path(Vector3.ZERO, Vector3(0, 0, -1), putter["max_speed"],
 			putter, map, false)
 	check(path[path.size() - 1].z < -10.0, "suggested-power maths rolls through the wall")
+
+
+# ---------------------------------------------------------------------------
+# Saving, XP and club upgrades (Milestone 5)
+# ---------------------------------------------------------------------------
+
+func test_save_round_trip() -> void:
+	SaveSystem.reset()
+	SaveSystem.add_xp(321)
+	SaveSystem.set_club_level("Irons", 4)
+	SaveSystem.set_setting("sound_on", false)
+	SaveSystem.save_game()
+	SaveSystem._data = {}  # Forget it, so the next read comes from disk.
+	check(SaveSystem.xp() == 321, "XP survives a save and load")
+	check(typeof(SaveSystem.xp()) == TYPE_INT, "XP loads back as a whole number")
+	check(SaveSystem.club_level("Irons") == 4, "club level survives")
+	check(SaveSystem.club_level("Driver") == 1, "unsaved clubs are level 1")
+	check(SaveSystem.setting("sound_on", true) == false, "settings survive")
+	SaveSystem.reset()
+
+
+func test_old_save_is_upgraded() -> void:
+	var file := FileAccess.open(TEST_SAVE, FileAccess.WRITE)
+	file.store_string('{"xp": 50}')  # No version, most keys missing.
+	file.close()
+	SaveSystem.load_game()
+	check(SaveSystem.data()["version"] == SaveSystem.SAVE_VERSION, "version filled in")
+	check(SaveSystem.xp() == 50, "old values kept")
+	check(SaveSystem.data()["club_levels"] is Dictionary, "missing sections get defaults")
+	SaveSystem.reset()
+
+
+func test_broken_save_starts_fresh() -> void:
+	var file := FileAccess.open(TEST_SAVE, FileAccess.WRITE)
+	file.store_string("{ this is not json")
+	file.close()
+	SaveSystem.load_game()
+	check(SaveSystem.xp() == 0, "fresh save after a broken file")
+	check(FileAccess.file_exists(TEST_SAVE + ".bad"), "broken file kept for debugging")
+	SaveSystem.reset()
+
+
+func test_club_levels_spread_between_one_and_ten() -> void:
+	var first := ClubSystem.get_club("Driver", 1)
+	var top := ClubSystem.get_club("Driver", 10)
+	var middle := ClubSystem.get_club("Driver", 5)
+	check(first["max_distance"] == 130.0 and top["max_distance"] == 175.0, "level 1 and 10 match the file")
+	check(is_equal_approx(middle["max_distance"], 150.0), "level 5 is 4/9 of the way (got %.1f)" % middle["max_distance"])
+	check(top["sweet_spot"] > first["sweet_spot"], "upgrades widen the sweet spot")
+	check(top["recovery"] > first["recovery"], "upgrades improve recovery")
+	check(top["launch_angle"] == first["launch_angle"], "stats not in level_10 stay the same")
+	var travelled := ClubSystem.simulate_distance(top["max_speed"], top)
+	check(absf(travelled - 175.0) < 0.5, "level 10 driver really goes 175 m (%.1f)" % travelled)
+
+
+func test_get_clubs_uses_saved_levels() -> void:
+	SaveSystem.reset()
+	SaveSystem.set_club_level("Wedge", 3)
+	var wedge: Dictionary = ClubSystem.get_clubs()[2]
+	check(wedge["level"] == 3, "wedge comes back at level 3")
+	SaveSystem.reset()
+
+
+func test_round_xp_adds_up() -> void:
+	var results := [
+		{"par": 3, "strokes": 2, "term": "Birdie"},
+		{"par": 4, "strokes": 4, "term": "Par"},
+		{"par": 5, "strokes": 6, "term": "Bogey"},
+	]
+	var xp := ProgressionSystem.round_xp(results, 2, 1)
+	# 40 (3 holes) + 60 (birdie) + 20 (par) + 5 (bogey) + 30 (2 timing) + 15 (1 power)
+	check(xp["total"] == 170, "3-hole round earns 170 XP (got %d)" % xp["total"])
+	var line_total := 0
+	for line in xp["lines"]:
+		line_total += line["xp"]
+	check(line_total == xp["total"], "lines add up to the total")
+
+
+func test_under_par_bonus() -> void:
+	var results := [{"par": 4, "strokes": 2, "term": "Eagle"}, {"par": 3, "strokes": 2, "term": "Birdie"}]
+	var labels := []
+	for line in ProgressionSystem.round_xp(results, 0, 0)["lines"]:
+		labels.append(line["label"])
+	check(labels.has("3 under par"), "under-par bonus listed (%s)" % [labels])
+
+
+func test_upgrades_cost_xp() -> void:
+	SaveSystem.reset()
+	check(not ProgressionSystem.upgrade("Driver"), "can't upgrade with 0 XP")
+	SaveSystem.add_xp(ProgressionSystem.upgrade_cost(1) + 10)
+	check(ProgressionSystem.upgrade("Driver"), "upgrade once affordable")
+	check(SaveSystem.club_level("Driver") == 2, "driver is level 2")
+	check(SaveSystem.xp() == 10, "cost was taken off")
+	check(SaveSystem.data()["lifetime_xp"] == ProgressionSystem.upgrade_cost(1) + 10,
+			"spending doesn't reduce lifetime XP")
+	SaveSystem.set_club_level("Driver", ClubSystem.max_level())
+	SaveSystem.add_xp(100000)
+	check(ProgressionSystem.upgrade_cost(ClubSystem.max_level()) == -1, "no cost past the top level")
+	check(not ProgressionSystem.upgrade("Driver"), "can't upgrade a maxed club")
+	SaveSystem.reset()
+
+
+func test_finishing_a_round_banks_xp() -> void:
+	SaveSystem.reset()
+	var rounds := RoundManagerScript.new()
+	rounds.build_round(3)
+	for i in 3:
+		rounds.strokes = rounds.current_hole()["par"]
+		rounds.record_hole()
+		rounds.current_index = mini(i + 1, 2)
+	rounds.finish_round()
+	check(rounds.round_xp["total"] > 0, "round earned XP")
+	check(SaveSystem.xp() == rounds.round_xp["total"], "XP banked in the save")
+	SaveSystem._data = {}
+	check(SaveSystem.xp() == rounds.round_xp["total"], "and written to disk")
+	rounds.free()
+	SaveSystem.reset()
+
+
+func test_longest_drive_only_counts_the_driver() -> void:
+	var rounds := RoundManagerScript.new()
+	rounds.build_round(3)
+	rounds.record_shot_distance("Irons", 95.0, false)
+	rounds.record_shot_distance("Driver", 120.0, false)
+	rounds.record_shot_distance("Putter", 6.0, true)
+	check(rounds.longest_drive == 120.0, "longest drive is the driver shot")
+	check(rounds.longest_hole_out == 6.0, "hole-out recorded")
+	rounds.free()

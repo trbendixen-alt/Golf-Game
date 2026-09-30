@@ -25,6 +25,27 @@ static func add_center_column(parent: Control) -> VBoxContainer:
 	return column
 
 
+## Like add_center_column, but the stack scrolls when it's taller than the screen
+## (e.g. an 18-hole scorecard). Kept clear of notches and the home bar.
+static func add_scroll_column(parent: Control) -> VBoxContainer:
+	var insets := get_safe_insets(parent.get_viewport())
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", int(insets["left"]) + 40)
+	margin.add_theme_constant_override("margin_top", int(insets["top"]) + 60)
+	margin.add_theme_constant_override("margin_right", int(insets["right"]) + 40)
+	margin.add_theme_constant_override("margin_bottom", int(insets["bottom"]) + 60)
+	parent.add_child(margin)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
+	var column := VBoxContainer.new()
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.add_theme_constant_override("separation", 30)
+	scroll.add_child(column)
+	return column
+
+
 static func make_label(text: String, font_size: int) -> Label:
 	var label := Label.new()
 	label.text = text

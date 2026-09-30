@@ -335,6 +335,7 @@ func _on_shot_fired(power: float, accuracy: float) -> void:
 
 
 func _on_ball_came_to_rest() -> void:
+	RoundManager.record_shot_distance(club["name"], _flat_distance(_shot_start, ball.position), false)
 	_get_ready_for_next_shot()
 
 
@@ -373,7 +374,12 @@ func _get_ready_for_next_shot() -> void:
 
 
 func _on_ball_holed() -> void:
+	RoundManager.record_shot_distance(club["name"], _flat_distance(_shot_start, cup_position), true)
 	_finish_hole("IN THE HOLE!")
+
+
+func _flat_distance(from: Vector3, to: Vector3) -> float:
+	return Vector2(to.x - from.x, to.z - from.z).length()
 
 
 ## The hole is over (holed out or picked up): save the score, show the golf term.
