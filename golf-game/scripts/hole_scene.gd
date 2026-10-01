@@ -418,6 +418,8 @@ func _get_ready_for_next_shot() -> void:
 	if RoundManager.is_at_stroke_cap():
 		_finish_hole("PICK UP")
 		return
+	if _on_green() and club_index != _putter_index():
+		_select_club(_putter_index())  # Also refreshes the lie and suggestion.
 	_update_lie()
 	_aim_at_cup()
 	_update_suggestion()
@@ -500,12 +502,26 @@ func _select_club_offset(offset: int) -> void:
 
 ## Switch to a club by its index in the list (wraps around at both ends).
 func _select_club(index: int) -> void:
+	if _on_green():
+		index = _putter_index()  # The Putter is the only club allowed on the green.
 	club_index = wrapi(index, 0, clubs.size())
 	club = clubs[club_index]
 	hud.set_club(club)
 	_update_lie()
 	_update_suggestion()
 	_update_aim_preview()
+
+
+## True when the ball is resting on the green.
+func _on_green() -> bool:
+	return surfaces.support_at(ball.position)["surface"]["name"] == "green"
+
+
+func _putter_index() -> int:
+	for i in clubs.size():
+		if clubs[i]["name"] == "Putter":
+			return i
+	return club_index
 
 
 ## Look at what the ball is sitting on and work out how the selected club plays from it.
@@ -566,7 +582,7 @@ func _process(delta: float) -> void:
 	# Feed the HUD. Club arrows only work between shots.
 	hud.update_map(ball.position, cup_position, aim_direction, _preview_end,
 			suggested_power, cup_out_of_range)
-	hud.set_club_buttons_enabled(_can_aim())
+	hud.set_club_buttons_enabled(_can_aim() and not _on_green())
 
 	# Keep the wind streaks in front of the ball.
 	wind_trails.follow_position = ball.position + aim_direction * TRAIL_LEAD
