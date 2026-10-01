@@ -4,11 +4,13 @@ extends Control
 ## 18-hole scorecard is long.
 
 const COUNT_UP_SECONDS := 1.2
-const HIGHLIGHT := Color(1.0, 0.9, 0.2)
+const HIGHLIGHT := Color("#ffd84a")
 
 var _xp_label: Label
 var _xp_tween: Tween
 var _xp_total := 0
+var _best_banner: Control
+var _best_tween: Tween
 
 
 func _ready() -> void:
@@ -16,7 +18,8 @@ func _ready() -> void:
 	UiHelpers.add_background(self)
 	var column := UiHelpers.add_scroll_column(self)
 
-	column.add_child(UiHelpers.make_label("ROUND COMPLETE", 80))
+	column.add_child(UiHelpers.make_title("ROUND COMPLETE", 100))
+	_add_personal_best(column)
 	column.add_child(UiHelpers.make_label(
 			RoundManager.format_vs_par(RoundManager.round_vs_par()), 150))
 	column.add_child(UiHelpers.make_label("%d strokes  -  par %d" % [
@@ -66,18 +69,52 @@ func _ready() -> void:
 		column.add_child(upgrade)
 
 	column.add_child(UiHelpers.make_button("CLUBS", _on_clubs_pressed))
-	column.add_child(UiHelpers.make_button("MAIN MENU", _on_menu_pressed))
+	column.add_child(UiHelpers.make_button("MAIN MENU", _on_menu_pressed, "OrangeButton"))
 
 	_xp_tween = create_tween()
 	_xp_tween.tween_method(_show_xp, 0, _xp_total, COUNT_UP_SECONDS) \
 			.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 
 
-## Any tap finishes the count-up straight away (the game never makes you wait).
+## Any tap finishes the animations straight away (the game never makes you wait).
 func _input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and _xp_tween and _xp_tween.is_running():
+	if not (event is InputEventMouseButton and event.pressed):
+		return
+	if _xp_tween and _xp_tween.is_running():
 		_xp_tween.kill()
 		_show_xp(_xp_total)
+	if _best_tween and _best_tween.is_running():
+		_best_tween.kill()
+		_best_banner.modulate = Color.WHITE
+
+
+## If this round beat the previous best for its length, celebrate; otherwise just
+## show the best to beat. (RoundManager.personal_best was filled in when the round ended.)
+func _add_personal_best(column: VBoxContainer) -> void:
+	var personal_best := RoundManager.personal_best
+	if personal_best.is_empty():  # Scene run on its own in the editor: no round was played.
+		return
+	var mode: int = personal_best["mode"]
+	var previous: Dictionary = personal_best["previous_best"]
+	var previous_text := "--" if previous.is_empty() else RoundManager.format_vs_par(previous["vs_par"])
+	var box := VBoxContainer.new()
+	column.add_child(box)
+	if personal_best["is_new_best"]:
+		var title := UiHelpers.make_label("NEW PERSONAL BEST!", 76)
+		title.add_theme_color_override("font_color", HIGHLIGHT)
+		box.add_child(title)
+		box.add_child(UiHelpers.make_label("%d-hole best:  %s  ->  %s" % [
+				mode, previous_text, RoundManager.format_vs_par(RoundManager.round_vs_par())], 44))
+		# A short celebration: fade in, then flash twice (about 1.3 seconds). Tapping skips it.
+		_best_banner = box
+		_best_tween = create_tween()
+		box.modulate = Color(1, 1, 1, 0)
+		_best_tween.tween_property(box, "modulate", Color.WHITE, 0.3)
+		for i in 2:
+			_best_tween.tween_property(box, "modulate", Color(1.6, 1.4, 0.7), 0.2)
+			_best_tween.tween_property(box, "modulate", Color.WHITE, 0.2)
+	else:
+		box.add_child(UiHelpers.make_label("Best for %d holes: %s" % [mode, previous_text], 40))
 
 
 func _show_xp(amount: int) -> void:

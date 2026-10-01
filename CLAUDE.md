@@ -1,4 +1,4 @@
-# Golf Game App: Master Prompt (v3)
+# Street Golf: Master Prompt (v3)
 
 > Living document. Sections marked **[NEW]** are additions/decisions I made that weren't in the original idea. Sections marked **[DECIDE]** need an answer before or during build.
 
@@ -236,9 +236,20 @@ Ideas to lock in (rename/swap as you like). Mix of environment, hazard type, and
 ## 13. Open Questions **[DECIDE]**
 
 - Ads: revisit after core game is built.
-- Game name?
+- ~~Game name?~~ **Decided: Street Golf** (tagline: "Golf where it doesn't belong").
 
 **Decided so far:** Godot 4 (GDScript); portrait; wind affects ball only (with MPH meter + visible trails); one Irons club at launch; club select on-screen with arrows; no restart hole; arcade-like HD style; no leaderboards for now (may revisit later); XP is a currency spent on club upgrades in a Clubs screen (player picks which club, each level costs more); quitting a round earns no XP.
 
 ---
+## 14. Hole content pipeline (Milestone 7 benchmark)
+
+*Main Street Opener* is the benchmark hole that sets the visual style. A hole is data plus a scene:
+see `docs/hole_format.md` for the format, the scenery build tool and the known limits, and
+`CREDITS.md` for asset sources (currently: none third-party, everything procedural).
+
+## 15. UI look (Street Golf)
+
+The shared theme lives in `golf-game/ui/theme/street_golf.tres` (Lilita One for titles and buttons,
+Fredoka for smaller text, navy outlines, glossy green and orange buttons). See `docs/ui_theme.md`.
+
 *Add new sections below as the idea grows.*

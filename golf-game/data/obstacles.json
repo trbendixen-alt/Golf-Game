@@ -30,6 +30,16 @@
 			"restitution": 0.1, "grip": 0.3,
 			"roll": 6.0, "bounce": 0.15, "lie_power": 0.7, "lie_sweet_spot": 0.6
 		},
+		"lamp": {
+			"label": "Lamp Post", "shape": "cylinder", "radius": 0.12, "height": 4.6, "color": "#2a2f2c",
+			"restitution": 0.3, "grip": 0.8,
+			"roll": 1.0, "bounce": 0.5, "lie_power": 0.7, "lie_sweet_spot": 0.6
+		},
+		"tree": {
+			"label": "Tree", "shape": "cylinder", "radius": 0.25, "height": 2.8, "color": "#4d3826",
+			"restitution": 0.2, "grip": 0.7,
+			"roll": 2.0, "bounce": 0.4, "lie_power": 0.7, "lie_sweet_spot": 0.6
+		},
 		"cone": {
 			"label": "Traffic Cone", "shape": "cylinder", "radius": 0.2, "height": 0.7, "color": "#ff7a1a",
 			"restitution": 0.3, "grip": 0.8, "taper": true,

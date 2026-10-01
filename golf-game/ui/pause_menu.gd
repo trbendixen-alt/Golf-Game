@@ -15,6 +15,7 @@ func _ready() -> void:
 	visible = false
 
 	var root := Control.new()
+	root.theme = UiHelpers.THEME  # The shared Street Golf look.
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(root)
 
@@ -26,17 +27,17 @@ func _ready() -> void:
 
 	# Page 1: the main pause menu.
 	_main_column = UiHelpers.add_center_column(root)
-	_main_column.add_child(UiHelpers.make_label("PAUSED", 90))
+	_main_column.add_child(UiHelpers.make_title("PAUSED", 130))
 	_main_column.add_child(UiHelpers.make_button("RESUME", close))
-	_main_column.add_child(UiHelpers.make_button("SETTINGS", _show_settings))
-	_main_column.add_child(UiHelpers.make_button("QUIT ROUND", _on_quit_pressed))
+	_main_column.add_child(UiHelpers.make_button("SETTINGS", _show_settings, "OrangeButton"))
+	_main_column.add_child(UiHelpers.make_button("QUIT ROUND", _on_quit_pressed, "OrangeButton"))
 
 	# Page 2: settings.
 	_settings_column = UiHelpers.add_center_column(root)
-	_settings_column.add_child(UiHelpers.make_label("SETTINGS", 90))
+	_settings_column.add_child(UiHelpers.make_title("SETTINGS", 130))
 	_settings_column.add_child(_make_toggle("SOUND", GameSettings.sound_on, _on_sound_toggled))
 	_settings_column.add_child(_make_toggle("HAPTICS", GameSettings.haptics_on, _on_haptics_toggled))
-	_settings_column.add_child(UiHelpers.make_button("BACK", _show_main))
+	_settings_column.add_child(UiHelpers.make_button("BACK", _show_main, "OrangeButton"))
 	_settings_column.get_parent().visible = false  # Hide page 2 (its CenterContainer).
 
 

@@ -24,6 +24,9 @@ signal hazard(kind: String, drop_position: Vector3)
 
 # --- Tunable numbers (tweak these to change how the ball feels) ---
 const BALL_RADIUS := 0.2          # Bigger than a real ball so it's visible on a phone.
+## The ball is DRAWN this much bigger than it physically is, so it reads clearly from
+## the default camera distance. (Collisions and the cup still use BALL_RADIUS.)
+const VISUAL_SCALE := 1.45
 const GRAVITY := 9.8              # Metres per second^2, pulls the ball down.
 const AIR_DRAG := 0.004           # Air slows the ball a bit (faster = more drag).
 const BOUNCE_ENERGY := 0.55       # Fraction of vertical speed kept after a bounce.
@@ -76,20 +79,29 @@ var _shadow: MeshInstance3D
 
 func _ready() -> void:
 	# Build the ball's look in code so this script works with no extra setup.
+	var visual_radius := BALL_RADIUS * VISUAL_SCALE
 	var mesh := SphereMesh.new()
-	mesh.radius = BALL_RADIUS
-	mesh.height = BALL_RADIUS * 2.0
+	mesh.radius = visual_radius
+	mesh.height = visual_radius * 2.0
 	var material := StandardMaterial3D.new()
 	material.albedo_color = Color.WHITE
+	material.roughness = 0.35
+	# A little self-glow so the ball never goes dull when the sun is behind it.
+	material.emission_enabled = true
+	material.emission = Color(1, 1, 1)
+	material.emission_energy_multiplier = 0.55
 	mesh.material = material
 	var ball_visual := MeshInstance3D.new()
 	ball_visual.mesh = mesh
+	# Lift the bigger ball so its bottom still touches the ground.
+	ball_visual.position.y = visual_radius - BALL_RADIUS
+	ball_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(ball_visual)
 
 	# A dark blob on the ground under the ball, so you can judge its height.
 	var shadow_mesh := CylinderMesh.new()
-	shadow_mesh.top_radius = BALL_RADIUS
-	shadow_mesh.bottom_radius = BALL_RADIUS
+	shadow_mesh.top_radius = visual_radius
+	shadow_mesh.bottom_radius = visual_radius
 	shadow_mesh.height = 0.01
 	var shadow_material := StandardMaterial3D.new()
 	shadow_material.albedo_color = Color(0, 0, 0, 0.4)

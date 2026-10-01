@@ -564,3 +564,299 @@ func test_longest_drive_only_counts_the_driver() -> void:
 	check(rounds.longest_drive == 120.0, "longest drive is the driver shot")
 	check(rounds.longest_hole_out == 6.0, "hole-out recorded")
 	rounds.free()
+
+
+# ---------------------------------------------------------------------------
+# Records and stats (Milestone 6)
+# ---------------------------------------------------------------------------
+
+## A fake finished hole, like RoundManager.results holds.
+func _hole(hole_name: String, par: int, strokes: int, putts: int) -> Dictionary:
+	var rounds := RoundManagerScript.new()
+	var term: String = rounds.score_term(strokes, par)
+	rounds.free()
+	return {"name": hole_name, "par": par, "strokes": strokes, "term": term, "putts": putts}
+
+
+func test_records_first_round_and_new_best() -> void:
+	SaveSystem.reset()
+	var first := Records.make_record([_hole("A", 3, 4, 2), _hole("B", 4, 4, 2), _hole("C", 5, 6, 3)], 100, 120.0, 2)
+	check(first["mode"] == 3 and first["vs_par"] == 2 and first["putts"] == 7, "record totals")
+	var result := Records.add_round(first)
+	check(result["is_new_best"] and result["previous_best"].is_empty(), "first round in a mode is a best, with nothing before it")
+	# A better round (-1) beats +2 and reports the old best.
+	var better := Records.make_record([_hole("A", 3, 2, 1), _hole("B", 4, 4, 2), _hole("C", 5, 5, 2)], 100, 100.0, 1)
+	result = Records.add_round(better)
+	check(result["is_new_best"], "lower score vs par is a new best")
+	check(result["previous_best"]["vs_par"] == 2, "previous best is reported")
+	# The same score again is not a new best (it has to beat it).
+	result = Records.add_round(Records.make_record([_hole("A", 3, 2, 1), _hole("B", 4, 4, 2), _hole("C", 5, 5, 2)], 0, 0.0, 0))
+	check(not result["is_new_best"], "matching the best isn't a new best")
+	# A 9-hole best is tracked separately from a 3-hole one.
+	var nine: Array = []
+	for i in 9:
+		nine.append(_hole("H%d" % i, 4, 6, 2))
+	result = Records.add_round(Records.make_record(nine, 0, 0.0, 0))
+	check(result["is_new_best"], "each mode has its own best")
+
+
+func test_records_stats() -> void:
+	SaveSystem.reset()
+	Records.add_round(Records.make_record([_hole("A", 3, 1, 0), _hole("B", 4, 3, 1), _hole("C", 5, 3, 1)], 0, 130.0, 0))  # Ace, Birdie, Eagle: -5
+	Records.add_round(Records.make_record([_hole("A", 3, 5, 3), _hole("B", 4, 4, 2), _hole("C", 5, 5, 2)], 0, 90.0, 0))   # +2
+	check(Records.rounds_played() == 2, "two rounds played")
+	check(Records.best_round(3)["vs_par"] == -5, "best 3-hole round")
+	check(Records.best_round(9).is_empty(), "no 9-hole rounds yet")
+	check(is_equal_approx(Records.average_vs_par(3), -1.5), "average of -5 and +2 is -1.5")
+	check(is_nan(Records.average_vs_par(18)), "no average without rounds")
+	check(Records.fewest_putts(3) == 2 and Records.fewest_putts(9) == -1, "fewest putts per mode")
+	check(Records.term_count("Ace") == 1 and Records.term_count("Eagle") == 1 and Records.term_count("Birdie") == 1, "ace / eagle / birdie totals")
+	check(is_equal_approx(Records.longest_drive(), 130.0), "longest drive")
+	check(Records.hole_best("A") == 1 and Records.hole_best("C") == 3, "fewest strokes per hole")
+	check(Records.hole_best("Nowhere") == -1, "unplayed hole has no best")
+
+
+func test_putts_are_counted_but_penalties_are_not() -> void:
+	var rounds := RoundManagerScript.new()
+	rounds.build_round(3)
+	rounds.add_stroke()       # Driver
+	rounds.add_stroke(true)   # Putt
+	rounds.add_stroke(true)   # Putt
+	rounds.add_stroke()       # A penalty stroke
+	check(rounds.strokes == 4 and rounds.putts == 2, "4 strokes, 2 of them putts")
+	rounds.record_hole()
+	check(rounds.results[0]["putts"] == 2, "the hole remembers its putts")
+	rounds.free()
+
+
+func test_finishing_a_round_saves_it_and_quitting_does_not() -> void:
+	SaveSystem.reset()
+	var rounds := RoundManagerScript.new()
+	# Quit partway through: nothing is ever saved (finish_round is never reached).
+	rounds.build_round(3)
+	rounds.add_stroke()
+	rounds.record_hole()
+	check(Records.rounds_played() == 0 and SaveSystem.xp() == 0, "an unfinished round leaves no record and no XP")
+	# Finish a round properly.
+	rounds.build_round(3)
+	for i in 3:
+		rounds.add_stroke()
+		rounds.record_hole()
+		rounds.strokes = 0
+	rounds.finish_round()
+	check(Records.rounds_played() == 1, "a finished round is recorded")
+	check(rounds.personal_best["is_new_best"] and rounds.personal_best["mode"] == 3, "and counts as a personal best")
+	check(Records.rounds()[0]["xp"] == rounds.round_xp["total"], "the record keeps the XP earned")
+	rounds.free()
+
+
+func test_round_history_survives_a_save_and_load() -> void:
+	SaveSystem.reset()
+	Records.add_round(Records.make_record([_hole("A", 3, 2, 1)], 40, 77.0, 1))
+	SaveSystem.save_game()
+	SaveSystem._data = {}  # Forget it in memory, so the next read comes from the file.
+	var record: Dictionary = Records.rounds()[0]
+	check(record["vs_par"] == -1 and record["holes"][0]["strokes"] == 2, "history comes back from the file")
+	check(typeof(record["mode"]) == TYPE_INT and typeof(record["holes"][0]["putts"]) == TYPE_INT, "whole numbers are ints again, not floats")
+	check(SaveSystem.data()["version"] == SaveSystem.SAVE_VERSION, "saved with the current version")
+
+
+func test_version_1_save_gets_an_empty_history() -> void:
+	SaveSystem.reset()
+	var file := FileAccess.open(TEST_SAVE, FileAccess.WRITE)
+	file.store_string('{"version": 1, "xp": 75, "lifetime_xp": 75, "club_levels": {"Driver": 3}}')
+	file.close()
+	SaveSystem._data = {}
+	check(SaveSystem.data()["xp"] == 75 and SaveSystem.club_level("Driver") == 3, "old XP and club levels are kept")
+	check(Records.rounds_played() == 0, "an old save starts with an empty round history")
+	check(SaveSystem.data()["version"] == SaveSystem.SAVE_VERSION, "and is upgraded to the new version")
+
+
+func test_reset_all_wipes_everything() -> void:
+	SaveSystem.reset()
+	SaveSystem.add_xp(500)
+	SaveSystem.set_club_level("Driver", 5)
+	Records.add_round(Records.make_record([_hole("A", 3, 2, 1)], 40, 77.0, 1))
+	SaveSystem.reset_all()
+	check(SaveSystem.xp() == 0 and SaveSystem.club_level("Driver") == 1, "XP and club levels are back to new-player values")
+	check(Records.rounds_played() == 0, "round history is gone")
+	SaveSystem._data = {}
+	check(SaveSystem.xp() == 0 and Records.rounds_played() == 0, "and the file on disk is wiped too")
+
+
+# ---------------------------------------------------------------------------
+# Main Street Opener (Milestone 7): the benchmark hole's data and scenery
+# ---------------------------------------------------------------------------
+
+func _main_street() -> Dictionary:
+	var rounds := RoundManagerScript.new()
+	var found := {}
+	for hole in rounds.all_holes():
+		if hole["id"] == "main_street_opener":
+			found = hole
+	rounds.free()
+	return found
+
+
+func test_main_street_hole_loads() -> void:
+	var hole := _main_street()
+	check(not hole.is_empty(), "main_street_opener.json is found among the holes")
+	check(hole["name"] == "Main Street Opener" and hole["par"] == 3, "name and par")
+	check(hole["look"] == "golden_hour", "uses the golden hour look")
+	check(not hole["scenery"].is_empty(), "has a scenery scene")
+	check(hole["camera"].has("back") and hole["camera"].has("height"), "has its own camera settings")
+
+
+func test_main_street_layout_is_playable() -> void:
+	var hole := _main_street()
+	var map := SurfaceMap.new(hole["surfaces"], hole["bounds"], hole["ground"], hole["obstacles"])
+	check(map.type_at(hole["tee"].x, hole["tee"].z) == "tee", "the tee is on the tee box")
+	check(map.type_at(hole["cup"].x, hole["cup"].z) == "green", "the cup is on the green")
+	check(map.type_at(0.0, -40.0) == "fairway", "the mid-fairway is fairway")
+	check(map.type_at(-4.1, -40.0) == "street", "beside the fairway is street")
+	check(map.type_at(-5.7, -40.0) == "rough", "the grass strip by the kerb is rough")
+	check(map.type_at(-7.5, -40.0) == "sidewalk", "then the sidewalk")
+	check(map.type_at(40.0, -40.0) == "oob", "outside the bounds is out of bounds")
+	# Nothing solid stands on the tee, the cup or the line of the fairway's centre.
+	check(not map.obstacles.covers(hole["tee"].x, hole["tee"].z), "nothing on the tee")
+	check(not map.obstacles.covers(hole["cup"].x, hole["cup"].z), "nothing on the cup")
+	for z in range(-2, -90, -4):
+		check(not map.obstacles.covers(0.0, float(z)), "centre line clear at z=%d" % z)
+
+
+func test_main_street_scenery_files_exist() -> void:
+	var hole := _main_street()
+	var data: Dictionary = hole["scenery"]
+	check(ResourceLoader.exists(data["scene"]), "scenery scene exists (run tools/build_hole_scenery.gd if not)")
+	check(ResourceLoader.exists(data["sun_mask"]), "baked sun mask exists")
+	var scenery = load(data["scene"]).instantiate()
+	check(scenery is HoleScenery, "the scene's root is a HoleScenery")
+	check(scenery.mask_rect.size.x > 0.0, "it knows the area the sun mask covers")
+	var multimeshes := 0
+	var instances := 0
+	for node in scenery.find_children("*", "MultiMeshInstance3D", true, false):
+		multimeshes += 1
+		instances += node.multimesh.instance_count
+	check(multimeshes > 0 and instances > 50, "instanced props (cars, trees, lamps) are saved with their positions")
+	scenery.free()
+
+
+func test_every_obstacle_in_the_hole_has_art() -> void:
+	# The tool draws art for these types; a new type in the data needs the tool taught about it.
+	var drawn := ["building", "car", "lamp", "tree", "cone"]
+	var hole := _main_street()
+	for obstacle in hole["obstacles"]:
+		check(drawn.has(obstacle["type"]), "no scenery art for obstacle type '%s'" % obstacle["type"])
+
+
+func test_looks_are_complete() -> void:
+	var looks: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(LookSetup.LOOKS_FILE))
+	var keys := ["elev", "azim", "sun", "energy", "ambient", "exposure", "zenith", "mid", "horizon",
+			"cloud", "cloud_shadow", "coverage", "fog", "fog_density", "lit", "glow_intensity",
+			"glow_bloom", "saturation", "contrast"]
+	for look_name in looks:
+		if look_name.begins_with("_"):
+			continue
+		for key in keys:
+			check(looks[look_name].has(key), "look '%s' is missing '%s'" % [look_name, key])
+
+
+func test_preview_mode_saves_nothing() -> void:
+	SaveSystem.reset()
+	var rounds := RoundManagerScript.new()
+	rounds.build_round(1)
+	rounds.is_preview = true
+	rounds.add_stroke()
+	rounds.record_hole()
+	check(Records.rounds_played() == 0 and SaveSystem.xp() == 0, "a preview leaves no record and no XP")
+	rounds.free()
+
+
+# ---------------------------------------------------------------------------
+# Street Golf main menu (shared theme, chips, feedback hooks)
+# ---------------------------------------------------------------------------
+
+func test_player_level_from_lifetime_xp() -> void:
+	check(ProgressionSystem.level_for(0) == 1, "a new player is level 1")
+	check(ProgressionSystem.level_for(119) == 1, "119 XP is still level 1")
+	check(ProgressionSystem.level_for(120) == 2, "120 XP reaches level 2")
+	check(ProgressionSystem.level_for(4600) == 10, "the last listed level")
+	check(ProgressionSystem.level_for(6100) == 11, "past the list, each level costs a fixed step")
+	SaveSystem.reset()
+	check(ProgressionSystem.player_level() == 1, "player_level() reads the save")
+	SaveSystem.add_xp(300)
+	SaveSystem.spend_xp(200)
+	check(ProgressionSystem.player_level() == 3, "spending XP never lowers the level")
+
+
+func test_top_club_is_the_highest_level() -> void:
+	SaveSystem.reset()
+	var top := ProgressionSystem.top_club()
+	check(top["level"] == 1 and top["name"] == ClubSystem.club_names()[0], "a new player's top club is the first club at level 1")
+	SaveSystem.set_club_level("Irons", 3)
+	SaveSystem.set_club_level("Wedge", 3)
+	top = ProgressionSystem.top_club()
+	check(top["name"] == "Irons" and top["level"] == 3, "the highest level wins; the first club wins a tie")
+
+
+func test_menu_chips_show_real_data_with_sensible_empty_values() -> void:
+	SaveSystem.reset()
+	check("Best 18: [color=#ffd84a]--[/color]" == MenuInfo.best_chip_text(), "no 18-hole round yet shows --")
+	check(MenuInfo.level_chip_text().contains("LV [color=#ffd84a]1[/color]"), "a new player is LV 1")
+	check(MenuInfo.level_chip_text().contains("Driver [color=#ffd84a]Lv 1[/color]"), "with a level 1 Driver")
+	# A 9-hole round doesn't count as an 18-hole best.
+	Records.add_round(Records.make_record([_hole("A", 3, 2, 1)], 0, 0.0, 0).merged({"mode": 9}))
+	check(MenuInfo.best_chip_text().contains("--"), "only 18-hole rounds count")
+	var holes: Array = []
+	for i in 18:
+		holes.append(_hole("H%d" % i, 4, 4 if i > 3 else 3, 2))
+	Records.add_round(Records.make_record(holes, 0, 0.0, 0))
+	check(MenuInfo.best_chip_text().contains("[color=#ffd84a]-4[/color]"), "a finished 18-hole round shows its score vs par")
+	SaveSystem.reset()
+
+
+func test_ui_theme_has_the_shared_look() -> void:
+	var ui_theme: Theme = load("res://ui/theme/street_golf.tres")
+	check(ui_theme != null, "the shared theme loads")
+	for variation in ["BigGreenButton", "OrangeButton"]:
+		check(ui_theme.get_type_variation_base(variation) == "Button", "%s is a Button variation" % variation)
+		check(ui_theme.has_stylebox("pressed", variation), "%s has a pressed look" % variation)
+	for name in ["navy", "gold", "yellow", "green", "orange"]:
+		check(ui_theme.has_color(name, "StreetGolf"), "theme palette has %s" % name)
+	check(ui_theme.has_font("title", "StreetGolf") and ui_theme.has_font("body", "StreetGolf"), "theme names its title and body fonts")
+	check(ui_theme.default_font != null, "theme sets a default font")
+
+
+func test_fonts_and_licences_are_in_the_project() -> void:
+	for path in ["res://fonts/lilita_one/LilitaOne-Regular.ttf", "res://fonts/fredoka/Fredoka-Variable.ttf"]:
+		check(ResourceLoader.exists(path), "font present: " + path)
+	for path in ["res://fonts/lilita_one/OFL.txt", "res://fonts/fredoka/OFL.txt"]:
+		check(FileAccess.file_exists(path), "licence file present: " + path)
+	var credits := FileAccess.get_file_as_string("res://../CREDITS.md")
+	check(credits.contains("Lilita One") and credits.contains("Fredoka") and credits.contains("Open Font License"), "CREDITS.md lists both fonts and their licence")
+
+
+func test_project_is_called_street_golf() -> void:
+	check(ProjectSettings.get_setting("application/config/name") == "Street Golf", "project name")
+	check(str(ProjectSettings.get_setting("application/config/version")) != "", "version is set")
+
+
+func test_button_feedback_hooks_respect_the_settings() -> void:
+	var sounds := []
+	var buzzes := []
+	UiFeedback.sound_hook = func(sound_name: StringName) -> void: sounds.append(sound_name)
+	UiFeedback.haptic_hook = func(strength: StringName) -> void: buzzes.append(strength)
+	var sound_before := GameSettings.sound_on
+	var haptics_before := GameSettings.haptics_on
+	GameSettings.sound_on = false
+	GameSettings.haptics_on = false
+	UiFeedback.press()
+	check(sounds.is_empty() and buzzes.is_empty(), "nothing plays or buzzes when both are off")
+	GameSettings.sound_on = true
+	GameSettings.haptics_on = true
+	UiFeedback.press()
+	check(sounds == [&"ui_click"] and buzzes == [&"light"], "a press calls the sound and haptic hooks")
+	UiFeedback.sound_hook = Callable()
+	UiFeedback.haptic_hook = Callable()
+	GameSettings.sound_on = sound_before
+	GameSettings.haptics_on = haptics_before

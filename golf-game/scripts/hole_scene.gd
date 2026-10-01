@@ -25,7 +25,7 @@ const QUALITY_SECONDS := 1.2           # How long "PERFECT!" etc. stays on scree
 const HAZARD_SECONDS := 1.2            # Pause on "SPLASH!" / "OUT OF BOUNDS" before the drop.
 
 const MPH_TO_MS := 0.44704       # Wind speeds are shown in MPH but physics uses m/s.
-const TRAIL_LEAD := 15.0         # Wind streaks are kept this far ahead of the ball.
+const TRAIL_LEAD := 32.0         # Wind streaks are kept this far ahead of the ball (so none pass right by the camera).
 
 # --- Camera tuning ---
 const CAMERA_BACK := 8.0         # Metres behind the ball.
@@ -33,7 +33,18 @@ const CAMERA_HEIGHT := 4.5       # Metres above the ground.
 const CAMERA_LOOK_AHEAD := 3.0   # The camera looks at a point this far ahead of the ball. A short
                                  # distance tilts the view down so the ball sits above the bottom controls.
 
+# The hole's own camera settings (a hole file can override any of these; see _ready).
+var _camera_back := CAMERA_BACK
+var _camera_height := CAMERA_HEIGHT
+var _camera_look_ahead := CAMERA_LOOK_AHEAD
+var _camera_look_height := 0.5
+var _camera_fov := 60.0
+var _camera_far := 400.0
+
 # Layout of this hole, read from the data file in _ready().
+var hole_data: Dictionary
+## Has its own scenery scene, look and ground style (Milestone 7's real holes).
+var is_themed := false
 var tee_position := Vector3.ZERO
 var cup_position := Vector3.ZERO
 ## Which surface is where on this hole.
@@ -88,6 +99,15 @@ var _press_position := Vector2.ZERO
 
 func _ready() -> void:
 	var hole := RoundManager.current_hole()
+	hole_data = hole
+	is_themed = not hole["scenery"].is_empty()
+	var camera_overrides: Dictionary = hole["camera"]
+	_camera_back = camera_overrides.get("back", _camera_back)
+	_camera_height = camera_overrides.get("height", _camera_height)
+	_camera_look_ahead = camera_overrides.get("look_ahead", _camera_look_ahead)
+	_camera_look_height = camera_overrides.get("look_height", _camera_look_height)
+	_camera_fov = camera_overrides.get("fov", _camera_fov)
+	_camera_far = camera_overrides.get("far", _camera_far)
 	tee_position = hole["tee"]
 	cup_position = hole["cup"]
 	surfaces = SurfaceMap.new(hole["surfaces"], hole["bounds"], hole["ground"], hole["obstacles"])
@@ -115,28 +135,51 @@ func _roll_wind(hole: Dictionary) -> void:
 # ---------------------------------------------------------------------------
 
 func _build_world() -> void:
-	# Sky colour and soft ambient light.
-	var environment := Environment.new()
-	environment.background_mode = Environment.BG_COLOR
-	environment.background_color = Color(0.53, 0.75, 0.95)
-	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = Color(0.8, 0.85, 0.9)
-	environment.ambient_light_energy = 0.6
-	var world_environment := WorldEnvironment.new()
-	world_environment.environment = environment
-	add_child(world_environment)
+	if hole_data["look"] != "":
+		# A real hole: golden-hour sky, sun, haze and bloom (data/looks.json).
+		LookSetup.apply(self, hole_data["look"])
+		# The wind also moves the trees and flags (their shaders read this).
+		RenderingServer.global_shader_parameter_set("wind_vec",
+				wind_direction * wind_speed_mph * MPH_TO_MS)
+	else:
+		# Sky colour and soft ambient light.
+		var environment := Environment.new()
+		environment.background_mode = Environment.BG_COLOR
+		environment.background_color = Color(0.53, 0.75, 0.95)
+		environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		environment.ambient_light_color = Color(0.8, 0.85, 0.9)
+		environment.ambient_light_energy = 0.6
+		var world_environment := WorldEnvironment.new()
+		world_environment.environment = environment
+		add_child(world_environment)
 
-	# The sun.
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-50, -30, 0)
-	sun.shadow_enabled = true
-	add_child(sun)
+		# The sun.
+		var sun := DirectionalLight3D.new()
+		sun.rotation_degrees = Vector3(-50, -30, 0)
+		sun.shadow_enabled = true
+		add_child(sun)
 
 	# Camera (positioned every frame in _process).
 	camera = Camera3D.new()
-	camera.fov = 60.0
-	camera.far = 400.0
+	camera.fov = _camera_fov
+	camera.far = _camera_far
 	add_child(camera)
+
+	# The hole's pre-built scenery (buildings, cars, trees, hills...), if it has one.
+	var ground_theme := {}
+	if is_themed:
+		var scenery_data: Dictionary = hole_data["scenery"]
+		var scenery: HoleScenery = load(scenery_data["scene"]).instantiate()
+		add_child(scenery)
+		ground_theme = {
+			"sun_mask": load(scenery_data["sun_mask"]),
+			"mask_rect": scenery.mask_rect,
+			"street_half": scenery_data.get("street_half", 5.0),
+			"street_end_z": scenery_data.get("street_end", -82.0),
+			"crosswalk_z": Vector2(scenery_data.get("crosswalks", [-31.0, -78.0])[0],
+					scenery_data.get("crosswalks", [-31.0, -78.0])[1]),
+			"stakes": scenery_data.get("stakes", true),
+		}
 
 	# Work out the line from tee to cup. The fairway and stripes follow this line.
 	var to_cup := cup_position - tee_position
@@ -150,24 +193,27 @@ func _build_world() -> void:
 	# The ground: flat at y = 0 (the ball physics treats y = 0 as the ground), with
 	# the hole's fairway, green, hazards and out-of-bounds stakes drawn on it.
 	var ground := HoleGround.new()
+	ground.theme = ground_theme
 	ground.surfaces = surfaces
 	ground.centre = midpoint
 	add_child(ground)
 
 	# White stripes every 10 m along the hole. A totally flat field gives no sense of
-	# distance, so these help you see how far the ball has travelled.
-	for i in range(1, int(hole_length / 10.0) + 1):
+	# distance, so these help you see how far the ball has travelled. (Real holes have
+	# their own markings painted on the ground instead.)
+	for i in range(1, int(hole_length / 10.0) + 1 if not is_themed else 0):
 		var stripe_mesh := BoxMesh.new()
 		stripe_mesh.size = Vector3(12, 0.02, 0.25)
 		_add_mesh(stripe_mesh, Color(1, 1, 1),
 				tee_position + direction * 10.0 * i + Vector3(0, ground.top_height, 0), facing)
 
-	# Tee marker.
+	# Tee marker. (A themed hole draws its tee box as a ground surface instead.)
 	var tee_mesh := CylinderMesh.new()
 	tee_mesh.top_radius = 0.7
 	tee_mesh.bottom_radius = 0.7
 	tee_mesh.height = 0.04
-	_add_mesh(tee_mesh, Color(0.95, 0.95, 0.95), tee_position + Vector3(0, ground.top_height, 0))
+	if not is_themed:
+		_add_mesh(tee_mesh, Color(0.95, 0.95, 0.95), tee_position + Vector3(0, ground.top_height, 0))
 
 	# The cup: a dark disc lying on the ground.
 	var cup_mesh := CylinderMesh.new()
@@ -176,7 +222,12 @@ func _build_world() -> void:
 	cup_mesh.height = 0.02
 	_add_mesh(cup_mesh, Color(0.05, 0.05, 0.05), cup_position + Vector3(0, ground.top_height, 0))
 
-	# Flag: a tall pole with a red flag so you can spot the cup from far away.
+	# Flag: a tall pole with a flag so you can spot the cup from far away.
+	if is_themed:
+		var pin := PinFlag.new()
+		pin.position = cup_position
+		add_child(pin)
+		return
 	var pole_mesh := CylinderMesh.new()
 	pole_mesh.top_radius = 0.04
 	pole_mesh.bottom_radius = 0.04
@@ -307,7 +358,7 @@ func _turn_aim(degrees: float) -> void:
 
 ## Third tap happened: turn the meter's power + accuracy into a real ball launch.
 func _on_shot_fired(power: float, accuracy: float) -> void:
-	RoundManager.add_stroke()
+	RoundManager.add_stroke(club["name"] == "Putter")
 	_update_hud()
 	# Grade the swing (Perfect / Good / Average / Poor) and tell the player.
 	var quality := ShotQuality.rate(power, accuracy, suggested_power, shot_club["sweet_spot"],
@@ -367,6 +418,8 @@ func _get_ready_for_next_shot() -> void:
 	if RoundManager.is_at_stroke_cap():
 		_finish_hole("PICK UP")
 		return
+	if _on_green() and club_index != _putter_index():
+		_select_club(_putter_index())  # Also refreshes the lie and suggestion.
 	_update_lie()
 	_aim_at_cup()
 	_update_suggestion()
@@ -449,12 +502,26 @@ func _select_club_offset(offset: int) -> void:
 
 ## Switch to a club by its index in the list (wraps around at both ends).
 func _select_club(index: int) -> void:
+	if _on_green():
+		index = _putter_index()  # The Putter is the only club allowed on the green.
 	club_index = wrapi(index, 0, clubs.size())
 	club = clubs[club_index]
 	hud.set_club(club)
 	_update_lie()
 	_update_suggestion()
 	_update_aim_preview()
+
+
+## True when the ball is resting on the green.
+func _on_green() -> bool:
+	return surfaces.support_at(ball.position)["surface"]["name"] == "green"
+
+
+func _putter_index() -> int:
+	for i in clubs.size():
+		if clubs[i]["name"] == "Putter":
+			return i
+	return club_index
 
 
 ## Look at what the ball is sitting on and work out how the selected club plays from it.
@@ -508,14 +575,14 @@ func _process(delta: float) -> void:
 		_update_aim_preview()
 
 	# Glide toward a spot behind and above the ball, looking down the aim line.
-	var target := ball.position - aim_direction * CAMERA_BACK + Vector3.UP * CAMERA_HEIGHT
+	var target := ball.position - aim_direction * _camera_back + Vector3.UP * _camera_height
 	camera.position = camera.position.lerp(target, 1.0 - exp(-4.0 * delta))
 	_point_camera()
 
 	# Feed the HUD. Club arrows only work between shots.
 	hud.update_map(ball.position, cup_position, aim_direction, _preview_end,
 			suggested_power, cup_out_of_range)
-	hud.set_club_buttons_enabled(_can_aim())
+	hud.set_club_buttons_enabled(_can_aim() and not _on_green())
 
 	# Keep the wind streaks in front of the ball.
 	wind_trails.follow_position = ball.position + aim_direction * TRAIL_LEAD
@@ -523,10 +590,12 @@ func _process(delta: float) -> void:
 
 ## Jump the camera straight to its spot (no gliding). Used when the ball is reset.
 func _snap_camera() -> void:
-	camera.position = ball.position - aim_direction * CAMERA_BACK + Vector3.UP * CAMERA_HEIGHT
+	camera.position = ball.position - aim_direction * _camera_back + Vector3.UP * _camera_height
 	_point_camera()
 
 
 func _point_camera() -> void:
-	var look_target := ball.position + aim_direction * CAMERA_LOOK_AHEAD + Vector3(0, 0.5, 0)
+	if not camera.is_inside_tree():
+		return  # The hole is being replaced by the next scene this frame.
+	var look_target := ball.position + aim_direction * _camera_look_ahead + Vector3(0, _camera_look_height, 0)
 	camera.look_at(look_target, Vector3.UP)

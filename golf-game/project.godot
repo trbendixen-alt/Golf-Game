@@ -10,7 +10,8 @@ config_version=5
 
 [application]
 
-config/name="Golf Game"
+config/name="Street Golf"
+config/version="0.1"
 run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
@@ -37,3 +38,20 @@ window/handheld/orientation=1
 
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="mobile"
+textures/vram_compression/import_etc2_astc=true
+anti_aliasing/quality/msaa_3d=2
+
+[shader_globals]
+
+sun_dir={
+"type": "vec3",
+"value": Vector3(0, 0.1, -1)
+}
+sun_color={
+"type": "color",
+"value": Color(1, 0.7, 0.4, 2)
+}
+wind_vec={
+"type": "vec3",
+"value": Vector3(3, 0, 1)
+}

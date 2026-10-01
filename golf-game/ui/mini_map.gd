@@ -108,12 +108,25 @@ func _draw_zone(points: PackedVector2Array, type_name: String, map_rect: Rect2,
 func _draw_shape(points: PackedVector2Array, color: Color, map_rect: Rect2,
 		to_map: Callable) -> void:
 	var on_map := PackedVector2Array()
+	var smallest := Vector2(INF, INF)
+	var biggest := Vector2(-INF, -INF)
 	for point in points:
-		on_map.append(to_map.call(point))
+		var mapped: Vector2 = to_map.call(point)
+		on_map.append(mapped)
+		smallest = smallest.min(mapped)
+		biggest = biggest.max(mapped)
+	# Things only a pixel or two across (a lamp post) can't be triangulated and aren't worth
+	# a polygon: draw a dot.
+	if (biggest - smallest).length() < 4.0:
+		if map_rect.has_point((smallest + biggest) / 2.0):
+			draw_circle((smallest + biggest) / 2.0, 1.6, color)
+		return
 	var frame := PackedVector2Array([map_rect.position, Vector2(map_rect.end.x, map_rect.position.y),
 			map_rect.end, Vector2(map_rect.position.x, map_rect.end.y)])
 	for piece in Geometry2D.intersect_polygons(on_map, frame):
-		if piece.size() >= 3:
+		# Skip slivers that can't be filled (they can appear where a shape is clipped at the
+		# map's edge); Godot would log an error for them.
+		if piece.size() >= 3 and not Geometry2D.triangulate_polygon(piece).is_empty():
 			draw_colored_polygon(piece, color)
 
 

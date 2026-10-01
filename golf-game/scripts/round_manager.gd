@@ -15,16 +15,19 @@ const SUMMARY_SCENE := "res://scenes/round_summary.tscn"
 const STROKE_CAP_OVER_PAR := 5
 
 ## The holes to play this round, in order. Each entry is a Dictionary:
-## { name, par, tee (Vector3), cup (Vector3), wind_min, wind_max (mph),
+## { id, name, par, tee (Vector3), cup (Vector3), wind_min, wind_max (mph),
 ##   surfaces (Array of zones), bounds (a shape, or null), ground (String),
-##   obstacles (Array) }
+##   obstacles (Array), look (String, "" = plain), camera (Dictionary of overrides),
+##   scenery (Dictionary: the hole's scenery scene and settings, {} = none) }
 ## See SurfaceMap for the zone format and Obstacles for the obstacle format.
 var hole_order: Array[Dictionary] = []
 ## Which hole we're on (0 = first).
 var current_index := 0
 ## Strokes taken so far on the current hole.
 var strokes := 0
-## Finished holes: an Array of { name, par, strokes, term } (term = "Birdie" etc.).
+## How many of those strokes were with the Putter (for the "fewest putts" stat).
+var putts := 0
+## Finished holes: an Array of { name, par, strokes, term, putts } (term = "Birdie" etc.).
 var results: Array[Dictionary] = []
 ## Shot grades this round, for the summary and XP.
 ## tier_counts[ShotQuality.Tier.PERFECT] = number of Perfect shots, and so on.
@@ -38,6 +41,11 @@ var longest_hole_out := 0.0
 ## What the last finished round earned (see ProgressionSystem.round_xp). Filled in
 ## when the round ends, just before the summary screen shows it.
 var round_xp: Dictionary = {}
+## True while previewing a single hole from the debug menu: it never saves XP or records.
+var is_preview := false
+## Did the finished round set a personal best for its mode? Filled in by
+## finish_round(): { mode, is_new_best, previous_best }. Empty until a round finishes.
+var personal_best: Dictionary = {}
 
 
 # ---------------------------------------------------------------------------
@@ -47,6 +55,17 @@ var round_xp: Dictionary = {}
 ## Called by the mode select screen. Sets up the round, then loads the first hole.
 func start_round(hole_count: int) -> void:
 	build_round(hole_count)
+	get_tree().change_scene_to_file(HOLE_SCENE)
+
+
+## Debug: play one specific hole by its file name (e.g. "main_street_opener") on its own.
+## Nothing from it is saved: no XP, no records.
+func start_preview(hole_id: String) -> void:
+	build_round(1)
+	for hole in _load_all_holes():
+		if hole["id"] == hole_id:
+			hole_order = [hole]
+	is_preview = true
 	get_tree().change_scene_to_file(HOLE_SCENE)
 
 
@@ -64,6 +83,8 @@ func build_round(hole_count: int) -> void:
 				hole_order.append(hole)
 	current_index = 0
 	strokes = 0
+	putts = 0
+	is_preview = false
 	results.clear()
 	_reset_shot_stats()
 
@@ -75,6 +96,7 @@ func _reset_shot_stats() -> void:
 	longest_drive = 0.0
 	longest_hole_out = 0.0
 	round_xp = {}
+	personal_best = {}
 
 
 ## Reads every .json file in data/holes/. Adding a hole = adding a file. No code changes.
@@ -89,6 +111,10 @@ func _load_all_holes() -> Array[Dictionary]:
 			push_error("Could not read hole file: " + file_name)
 			continue
 		holes.append({
+			"id": file_name.get_basename(),
+			"look": data.get("look", ""),
+			"camera": data.get("camera", {}),
+			"scenery": data.get("scenery", {}),
 			"name": data["name"],
 			"par": int(data["par"]),
 			"tee": Vector3(data["tee"][0], data["tee"][1], data["tee"][2]),
@@ -120,9 +146,17 @@ func hole_count() -> int:
 	return hole_order.size()
 
 
-## Call once per shot.
-func add_stroke() -> void:
+## Every hole in data/holes/ (used by the Stats screen to list per-hole bests).
+func all_holes() -> Array[Dictionary]:
+	return _load_all_holes()
+
+
+## Call once per stroke. Pass true when the stroke was a Putter shot. (Penalty strokes
+## are added without it, so they don't count as putts.)
+func add_stroke(is_putt := false) -> void:
 	strokes += 1
+	if is_putt:
+		putts += 1
 
 
 ## Remember how good a shot was. `quality` comes from ShotQuality.rate().
@@ -157,16 +191,20 @@ func record_hole() -> void:
 	var hole := current_hole()
 	strokes = mini(strokes, stroke_cap())
 	results.append({"name": hole["name"], "par": hole["par"], "strokes": strokes,
-			"term": score_term(strokes, hole["par"])})
+			"term": score_term(strokes, hole["par"]), "putts": putts})
 
 
 ## Quit Round from the pause menu: forget the round and go back to the main menu.
-## (An abandoned round earns no XP and isn't recorded, not even for finished holes.)
+## (An abandoned round earns no XP and isn't recorded, not even for finished holes:
+## XP and records are only ever saved by finish_round(), which an abandoned round
+## never reaches.)
 func abandon_round() -> void:
 	hole_order.clear()
 	results.clear()
 	current_index = 0
 	strokes = 0
+	putts = 0
+	is_preview = false
 	_reset_shot_stats()
 	get_tree().change_scene_to_file(MENU_SCENE)
 
@@ -175,6 +213,10 @@ func abandon_round() -> void:
 func next_hole() -> void:
 	current_index += 1
 	strokes = 0
+	putts = 0
+	if is_preview:  # A debug preview ends back at the menu, saving nothing.
+		abandon_round()
+		return
 	if current_index >= hole_order.size():
 		finish_round()
 		get_tree().change_scene_to_file(SUMMARY_SCENE)
@@ -182,11 +224,16 @@ func next_hole() -> void:
 		get_tree().change_scene_to_file(HOLE_SCENE)
 
 
-## The last hole is done: work out the XP, bank it and save straight away (so it's
-## kept even if the app is closed on the summary screen).
+## The last hole is done: work out the XP, bank it, add the round to the history
+## (checking for a personal best) and save straight away, so it's all kept even if
+## the app is closed on the summary screen.
 func finish_round() -> void:
 	round_xp = ProgressionSystem.round_xp(results, perfect_timing_shots, perfect_power_shots)
 	SaveSystem.add_xp(round_xp["total"])
+	var record := Records.make_record(results, round_xp["total"], longest_drive,
+			tier_counts[ShotQuality.Tier.PERFECT])
+	personal_best = Records.add_round(record)
+	personal_best["mode"] = record["mode"]
 	SaveSystem.save_game()
 
 
@@ -232,8 +279,4 @@ func score_term(hole_strokes: int, par: int) -> String:
 
 ## Formats a score vs par: 0 -> "E" (even), 2 -> "+2", -1 -> "-1".
 func format_vs_par(difference: int) -> String:
-	if difference == 0:
-		return "E"
-	elif difference > 0:
-		return "+%d" % difference
-	return "%d" % difference
+	return Records.format_vs_par(difference)
